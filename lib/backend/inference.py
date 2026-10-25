@@ -86,16 +86,18 @@ def infer_image():
         # 1. Convert base64 -> PIL Image
         pil_image = base64_to_image(image_base64)
 
-        # 2. Run AI Inference / Segmentation
-        annotated_img, confidence, predicted_class = run_inference(pil_image)
+        # 2. Run AI Inference / Segmentation with contextual hint
+        hint = f"{custom_label or ''} {description}".strip()
+        annotated_img, confidence, predicted_class = run_inference(pil_image, hint_text=hint)
         final_label = custom_label if custom_label else predicted_class
 
-        # Determine severity automatically if not explicitly provided
-        if severity not in ["low", "medium", "critical"]:
-            if final_label in ["Potholes", "Waterlogging"] and confidence > 0.8:
-                severity = "critical"
-            else:
-                severity = "medium"
+        # Determine severity automatically by hazard classification
+        if final_label in ["Potholes", "Waterlogging"]:
+            severity = "critical"
+        elif final_label in ["Damaged Road", "Broken Streetlight"]:
+            severity = "medium"
+        else:
+            severity = "low"
 
         # 3. Convert annotated image to bytes & Base64
         img_byte_arr = io.BytesIO()
@@ -107,11 +109,12 @@ def infer_image():
         s3_image_url = upload_image_to_s3(raw_bytes, filename_prefix="hazards")
 
         # 5. Persist to Database (Amazon RDS / SQLite fallback)
+        # Point segmented_image to s3_image_url to eliminate 50MB payload bloat
         report = IssueReport(
             username=username,
             location=location,
             image_url=s3_image_url,
-            segmented_image=annotated_base64,
+            segmented_image=s3_image_url,
             confidence_score=float(confidence),
             label=final_label,
             status="reported",

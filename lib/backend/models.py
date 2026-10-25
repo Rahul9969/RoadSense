@@ -30,8 +30,8 @@ class IssueReport(db.Model):
         lat = float(loc.get("lat", loc.get("latitude", 27.6194)))
         lng = float(loc.get("lng", loc.get("longitude", 85.5388)))
 
-        # Format image source: Prefer S3 URL, fallback to segmented base64 or filepath
-        img = self.image_url or self.segmented_image or ""
+        # Format image source: Prefer Amazon S3 URL, fallback to small base64 if no S3 URL
+        img = self.image_url or (self.segmented_image if self.segmented_image and len(self.segmented_image) < 50000 else "")
 
         return {
             "id": self.issue_id,
@@ -45,7 +45,6 @@ class IssueReport(db.Model):
             "severity": self.severity or "medium",
             "confidence_score": round(self.confidence_score, 3) if self.confidence_score else 0.85,
             "image_url": self.image_url or "",
-            "segmented_image": self.segmented_image or "",
             "image": img,
             "timestamp": self.created_at.isoformat() if self.created_at else datetime.utcnow().isoformat(),
             "created_at": self.created_at.isoformat() if self.created_at else datetime.utcnow().isoformat(),
