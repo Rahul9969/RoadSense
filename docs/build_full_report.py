@@ -654,21 +654,51 @@ def infer_image():
     return annotated, round(float(conf), 3), predicted_class""", filename="lib/backend/utils/model_runner.py")
 
     # 6.6 SQS Access Policy
-    style_heading_2(doc, "6.6 Amazon SQS Resource-Based Access Policy (lib/backend/sqs_access_policy.json)")
+    style_heading_2(doc, "6.6 Amazon SQS Resource-Based Access Policy (aws/sqs_access_policy.json)")
+    add_body_paragraph(doc, 
+        "Configured directly on the Amazon SQS queue in AWS (arn:aws:sqs:us-east-1:464817648755:roadsense-prod-hazard-queue). "
+        "Grants least-privilege queue access to the EC2 backend role, SNS fan-out service, and serverless Lambda worker:")
     add_code_block(doc, """{
   "Version": "2012-10-17",
+  "Id": "RoadSenseProdHazardQueuePolicy",
   "Statement": [
     {
-      "Sid": "AllowEC2AndLambdaQueueAccess",
+      "Sid": "AllowEC2AndBackendSendMessages",
       "Effect": "Allow",
       "Principal": {
         "AWS": [
           "arn:aws:iam::464817648755:role/roadsense-prod-ec2-role",
-          "arn:aws:iam::464817648755:role/roadsense-prod-lambda-role"
+          "arn:aws:iam::464817648755:root"
         ]
       },
       "Action": [
         "sqs:SendMessage",
+        "sqs:GetQueueUrl",
+        "sqs:GetQueueAttributes"
+      ],
+      "Resource": "arn:aws:sqs:us-east-1:464817648755:roadsense-prod-hazard-queue"
+    },
+    {
+      "Sid": "AllowSNSTopicFanOut",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "sns.amazonaws.com"
+      },
+      "Action": "sqs:SendMessage",
+      "Resource": "arn:aws:sqs:us-east-1:464817648755:roadsense-prod-hazard-queue",
+      "Condition": {
+        "ArnEquals": {
+          "aws:SourceArn": "arn:aws:sns:us-east-1:464817648755:roadsense-prod-critical-alerts"
+        }
+      }
+    },
+    {
+      "Sid": "AllowLambdaServiceConsumeAndPoll",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "lambda.amazonaws.com"
+      },
+      "Action": [
         "sqs:ReceiveMessage",
         "sqs:DeleteMessage",
         "sqs:GetQueueAttributes"
@@ -676,7 +706,7 @@ def infer_image():
       "Resource": "arn:aws:sqs:us-east-1:464817648755:roadsense-prod-hazard-queue"
     }
   ]
-}""", filename="lib/backend/sqs_access_policy.json")
+}""", filename="aws/sqs_access_policy.json")
 
     # 6.7 AWS CloudFormation Section 10: Serverless Lambda & SQS Trigger
     style_heading_2(doc, "6.7 Infrastructure as Code: Serverless Lambda & SQS Triggers (aws/roadsense-cloudformation.yaml)")
