@@ -3,9 +3,9 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';//to store tokens
 
 
-class AuthService{
-
-  static const String url="http://127.0.0.1:6969";
+class AuthService {
+  // Production AWS EC2 Endpoint (handled by Nginx reverse proxy on port 80)
+  static const String url = "http://44.215.69.114";
 
   //this will call sign up function
   static Future<bool>signUp({
