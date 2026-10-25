@@ -1,9 +1,16 @@
 import type { IssueReport, AdminStats, UserAuth } from '../type';
 
-const DEFAULT_API_BASE = 'http://127.0.0.1:6969';
+const DEFAULT_API_BASE = '';
 
 export function getApiBaseUrl(): string {
-  return localStorage.getItem('roadsense_api_url') || DEFAULT_API_BASE;
+  if (typeof window !== 'undefined') {
+    const custom = localStorage.getItem('roadsense_api_url');
+    // If the browser stored localhost:6969 or 127.0.0.1 from a local run, ignore it when accessed from a remote host
+    if (custom && custom !== 'http://127.0.0.1:6969' && custom !== 'http://localhost:6969') {
+      return custom.trim().replace(/\/+$/, '');
+    }
+  }
+  return (import.meta as any).env?.VITE_API_BASE_URL || DEFAULT_API_BASE;
 }
 
 export function setApiBaseUrl(url: string): void {
