@@ -7,9 +7,19 @@
 
 set -e
 
-echo "🚀 [1/6] Updating system packages..."
+echo "🚀 [1/6] Updating system packages & configuring swap..."
 sudo apt-get update -y
 sudo apt-get install -y python3-pip python3-venv nginx git curl jq libpq-dev
+
+# Create 2GB swap file to prevent OOM kills on t3.micro (1GB RAM) during npm build
+if [ ! -f /swapfile ]; then
+    echo "💾 Creating 2GB Swap Memory..."
+    sudo fallocate -l 2G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
+    sudo chmod 600 /swapfile
+    sudo mkswap /swapfile
+    sudo swapon /swapfile
+    echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+fi
 
 # Install Node.js (v20 LTS) for building the React Web Admin portal
 if ! command -v node &> /dev/null; then
@@ -32,9 +42,14 @@ python3 -m venv venv
 echo "🌐 [4/6] Building React Admin Web Portal..."
 cd $APP_DIR/web-admin
 npm install
+rm -rf dist
 npm run build
 sudo mkdir -p /var/www/roadsense-admin
 sudo cp -r dist/* /var/www/roadsense-admin/
+sudo mkdir -p /var/www/roadsense-admin/dist
+sudo cp -r dist/* /var/www/roadsense-admin/dist/
+sudo chown -R www-data:www-data /var/www/roadsense-admin
+sudo chmod -R 755 /var/www/roadsense-admin
 
 echo "⚙️ [5/6] Configuring Nginx Reverse Proxy..."
 sudo cp $APP_DIR/aws/nginx.conf /etc/nginx/sites-available/roadsense

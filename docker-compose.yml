@@ -1,0 +1,93 @@
+# ==============================================================================
+# RoadSense - Full-Stack Cloud Platform Docker Compose Setup
+# Authors: Rahul Kewat, Stewin Mathias, Reeven Menezes
+# 
+# Usage:
+#   docker compose up --build        (Start all services with logs)
+#   docker compose up -d             (Start all services in detached background)
+#   docker compose down              (Stop and remove containers)
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. DATABASE: PostgreSQL (Local equivalent of Amazon RDS PostgreSQL)
+  # ----------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: roadsense-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-roadsense_admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-roadsense_secret_pass_2026}
+      POSTGRES_DB: ${DB_NAME:-roadsensedb}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-roadsense_admin} -d ${DB_NAME:-roadsensedb}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - roadsense-network
+
+  # ----------------------------------------------------------------------------
+  # 2. BACKEND: Python Flask + Gunicorn REST API (Local equivalent of Amazon EC2)
+  # ----------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./lib/backend
+      dockerfile: Dockerfile
+    container_name: roadsense-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      FLASK_ENV: production
+      PORT: 6969
+      DATABASE_URL: postgresql://${DB_USER:-roadsense_admin}:${DB_PASSWORD:-roadsense_secret_pass_2026}@postgres:5432/${DB_NAME:-roadsensedb}
+      SECRET_KEY: ${SECRET_KEY:-roadsense_super_secret_jwt_key_2026}
+      RUNNING_IN_AWS: ${RUNNING_IN_AWS:-false}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-}
+      SNS_TOPIC_ARN: ${SNS_TOPIC_ARN:-}
+      SQS_QUEUE_URL: ${SQS_QUEUE_URL:-}
+    ports:
+      - "6969:6969"
+    volumes:
+      - backend_uploads:/app/uploaded_images
+    networks:
+      - roadsense-network
+
+  # ----------------------------------------------------------------------------
+  # 3. ADMIN PORTAL: React 19 + TypeScript + Vite + Nginx Reverse Proxy
+  # ----------------------------------------------------------------------------
+  admin-web:
+    build:
+      context: ./web-admin
+      dockerfile: Dockerfile
+    container_name: roadsense-admin-web
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+      - "5173:80"
+    networks:
+      - roadsense-network
+
+# ------------------------------------------------------------------------------
+# Persistent Volumes & Network Definition
+# ------------------------------------------------------------------------------
+volumes:
+  postgres_data:
+    name: roadsense_postgres_data
+  backend_uploads:
+    name: roadsense_backend_uploads
+
+networks:
+  roadsense-network:
+    name: roadsense_network
+    driver: bridge

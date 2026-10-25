@@ -240,3 +240,8 @@ lib/backend/venv/
 lib/backend/instance/*.db
 lib/backend/uploaded_images/
 instance/
+
+# AWS & SSH Key Files (Never commit private keys!)
+*.pem
+*.key
+*.cer

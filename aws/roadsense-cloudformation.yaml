@@ -210,12 +210,12 @@ Resources:
 
   PostgresDB:
     Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
     Properties:
       AllocatedStorage: '20'
       DBInstanceClass: 'db.t3.micro'
       DBName: 'roadsensedb'
       Engine: 'postgres'
-      EngineVersion: '16.1'
       MasterUsername: !Ref DBUsername
       MasterUserPassword: !Ref DBPassword
       DBSubnetGroupName: !Ref DBSubnetGroup
@@ -225,7 +225,6 @@ Resources:
       PubliclyAccessible: false
       StorageType: 'gp2'
       DeletionProtection: false
-      SkipFinalSnapshot: true
       Tags:
         - Key: Name
           Value: !Sub '${EnvironmentName}-rds-postgres'

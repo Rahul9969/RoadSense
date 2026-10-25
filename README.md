@@ -70,7 +70,16 @@ RoadSense/
 
 ## 📦 Getting Started & Running Locally
 
-### 1. Run the Backend
+### Option A: Run Full Stack with Docker (1-Command Quickstart) 🐳
+```bash
+docker compose up --build -d
+```
+* Launches PostgreSQL, Python Flask API on `:6969`, and React Admin Web on `:80` and `:5173`.
+* Full details in [DOCKER_GUIDE.md](file:///d:/ChitraDartaa-A-Civic-Issue-Reporting-System/DOCKER_GUIDE.md).
+
+### Option B: Run Locally Without Docker
+
+#### 1. Run the Backend
 ```powershell
 cd lib/backend
 python -m venv venv
@@ -80,7 +89,7 @@ python backend_main.py
 ```
 *Backend runs on `http://127.0.0.1:6969` (Health check at `/api/health`).*
 
-### 2. Run the Admin Web Portal
+#### 2. Run the Admin Web Portal
 ```powershell
 cd web-admin
 npm install
