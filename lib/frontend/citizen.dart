@@ -161,17 +161,17 @@ void _showFullImage(String base64String) {
       final ImagePicker picker = ImagePicker();
       final XFile? image = await picker.pickImage(
         source: source,
-        imageQuality: 90,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 80,
       );
 
       if (image != null) {
         setState(() {
           _selectedImage = image; //for xfile
-  
         });
 
         await _determinePosition();
-    
       }
     } catch (e) {
       print("Image picker error: $e");
@@ -200,20 +200,34 @@ void _showFullImage(String base64String) {
         return;
       }
 
+      // 1. Immediately read cached/last known position for instant response (< 50ms)
+      final lastPos = await Geolocator.getLastKnownPosition();
+      if (lastPos != null && mounted) {
+        setState(() {
+          _latitude = lastPos.latitude;
+          _longitude = lastPos.longitude;
+          _currentAddress = "Lat: ${lastPos.latitude.toStringAsFixed(4)}, Long: ${lastPos.longitude.toStringAsFixed(4)}";
+        });
+      }
+
+      // 2. Fetch fresh position with balanced accuracy and 5-second timeout
       Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
+        desiredAccuracy: LocationAccuracy.medium,
+        timeLimit: const Duration(seconds: 5),
       );
 
       if (mounted) {
         setState(() {
-        _latitude = position.latitude;
-        _longitude = position.longitude;
-        _currentAddress = "Lat: ${position.latitude.toStringAsFixed(3)}, Long: ${position.longitude.toStringAsFixed(3)}";
+          _latitude = position.latitude;
+          _longitude = position.longitude;
+          _currentAddress = "Lat: ${position.latitude.toStringAsFixed(4)}, Long: ${position.longitude.toStringAsFixed(4)}";
         });
       }
     } catch (e) {
-      print("Location error: $e");
-      _showSnackBar("Could not fetch location: $e", Colors.orange);
+      print("Location fetch completed/timed out: $e");
+      if (_latitude == null && mounted) {
+        _showSnackBar("Could not get GPS fix. You can tap on the map to pin location.", Colors.orange);
+      }
     }
   }
 
@@ -361,7 +375,8 @@ Future<void> _submitReport() async {
       'location': {
         'lat': _latitude,
         'lng': _longitude
-      }
+      },
+      'description': _descriptionController.text.trim(),
     };
 
     print('Submitting report to: ${AuthService.url}/api/infer');
@@ -569,11 +584,38 @@ icon: const Icon(Icons.notifications_active_outlined),
                   borderRadius: BorderRadius.circular(15),
                 ),
               ),
-              onPressed: _selectedImage != null ? _submitReport : null,
-              child: const Text(
-                "Submit Report",
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-              ),
+              onPressed: (_selectedImage != null && !_isAnalyzing) ? _submitReport : null,
+              child: _isAnalyzing
+                  ? const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2.5,
+                          ),
+                        ),
+                        SizedBox(width: 12),
+                        Text(
+                          "Uploading to Cloud...",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    )
+                  : const Text(
+                      "Submit Report",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
             ),
           )
         ],
@@ -666,7 +708,8 @@ Widget _buildLocationTile() {
             ),
             children: [
               TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                urlTemplate: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
+                subdomains: const ['a', 'b', 'c', 'd'],
                 userAgentPackageName: 'com.roadsense.app',
               ),
               if (_latitude != null)
