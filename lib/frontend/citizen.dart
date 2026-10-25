@@ -665,7 +665,10 @@ Widget _buildLocationTile() {
               },
             ),
             children: [
-              TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
+              TileLayer(
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.roadsense.app',
+              ),
               if (_latitude != null)
                 MarkerLayer(markers: [
                   Marker(

@@ -254,7 +254,7 @@
                               children: [
                                 TileLayer(
                                   urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                                  userAgentPackageName: 'com.example.citizenconnect',
+                                  userAgentPackageName: 'com.roadsense.app',
                                 ),
                                 MarkerLayer(
                                   markers: issues.map((issue) {
