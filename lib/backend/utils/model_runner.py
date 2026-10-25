@@ -72,11 +72,23 @@ def gemini_vision_hazard_detection(image: Image.Image, hint_text: str = ""):
     """
     api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not api_key:
+        env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), ".env")
+        if os.path.exists(env_path):
+            try:
+                with open(env_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if line.strip().startswith("GEMINI_API_KEY="):
+                            api_key = line.strip().split("=", 1)[1].strip("\"'")
+                            break
+            except Exception:
+                pass
+
+    if not api_key:
         return None
 
     try:
         width, height = image.size
-        # Optimize image for Gemini Vision REST API (< 1MB)
+        # Optimize image for Vision REST API (< 1MB)
         max_dim = 1024
         img_for_api = image.copy()
         if max(width, height) > max_dim:
@@ -103,7 +115,7 @@ def gemini_vision_hazard_detection(image: Image.Image, hint_text: str = ""):
             "Coordinates in box_2d must be integers normalized between 0 and 1000 enclosing the most dangerous road defect."
         )
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
         payload = {
             "contents": [
                 {
@@ -191,14 +203,14 @@ def gemini_vision_hazard_detection(image: Image.Image, hint_text: str = ""):
         draw.line([x1, y1, x1, y1 - reticle_len], fill=color, width=line_w + 2)
 
         # Top badge
-        label_text = f"GEMINI AI: {label.upper()} ({confidence * 100:.1f}%) [{criticality.upper()}]"
+        label_text = f"AI DETECTED: {label.upper()} ({confidence * 100:.1f}%) [{criticality.upper()}]"
         tag_h = max(26, int(height * 0.045))
         tag_w = min(width - x0, int(len(label_text) * 11.0))
         draw.rectangle([x0, max(0, y0 - tag_h), x0 + tag_w, y0], fill=color)
         draw.text((x0 + 8, max(3, y0 - tag_h + 4)), label_text, fill="#FFFFFF")
 
-        logger.info(f"Gemini Vision successfully detected: {label} (conf: {confidence}, crit: {criticality})")
-        return InferenceResult(annotated, round(confidence, 3), label, severity=severity, bbox=[x0, y0, x1, y1], engine="gemini_vision")
+        logger.info(f"AI Vision successfully detected: {label} (conf: {confidence}, crit: {criticality})")
+        return InferenceResult(annotated, round(confidence, 3), label, severity=severity, bbox=[x0, y0, x1, y1], engine="ai")
 
     except Exception as e:
         logger.warning(f"Gemini Vision API inference exception: {e}")

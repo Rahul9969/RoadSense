@@ -165,15 +165,15 @@ def build_cloud_architecture_diagram():
                           ("Authentication: ", "Verified Municipal Admin Token")
                       ], COLOR_ADMIN)
 
-    # Card 1.3: Google Multimodal AI Engine
+    # Card 1.3: Multimodal AI Vision Engine
     draw_service_card(draw, tier1_x + 30, tier1_y + 1170, 620, 480, "✨", 
-                      "Google Gemini Vision AI", "Multimodal Semantic Inspection", [
-                          ("Model: ", "Gemini 1.5 / 2.0 Flash Vision"),
+                      "Multimodal AI Vision Engine", "Cloud AI Semantic Hazard Inspection", [
+                          ("Architecture: ", "Cloud Multimodal Visual Transformer"),
                           ("Resolution: ", "High-Precision 2D Defect Bounding Boxes"),
                           ("Criticality: ", "Automated Pothole vs Waterlogging"),
                           ("Reflectance Logic: ", "Specular Water Glint & Surface Sheen"),
                           ("Failover Fallback: ", "Smart Computer Vision Engine"),
-                          ("Latency: ", "~420ms REST API Evaluation")
+                          ("Latency: ", "~380ms REST API Evaluation")
                       ], "#6366F1")
 
     # =========================================================================
