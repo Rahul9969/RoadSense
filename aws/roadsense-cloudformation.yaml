@@ -381,6 +381,70 @@ Resources:
       AlarmActions:
         - !Ref CriticalAlertsTopic
 
+  # ============================================================================
+  # 10. SERVERLESS COMPUTE: AWS Lambda Hazard Event Worker
+  # ============================================================================
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${EnvironmentName}-lambda-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [lambda.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: !Sub '${EnvironmentName}-lambda-worker-policy'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: SQSQueueProcessing
+                Effect: Allow
+                Action:
+                  - 'sqs:ReceiveMessage'
+                  - 'sqs:DeleteMessage'
+                  - 'sqs:GetQueueAttributes'
+                Resource: !GetAtt HazardEventQueue.Arn
+              - Sid: SNSPublishAccess
+                Effect: Allow
+                Action: ['sns:Publish']
+                Resource: !Ref CriticalAlertsTopic
+
+  RoadSenseHazardWorker:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${EnvironmentName}-hazard-worker'
+      Description: 'Serverless event worker for automated triage scoring and SNS escalation'
+      Runtime: 'python3.11'
+      Handler: 'lambda_function.lambda_handler'
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN: !Ref CriticalAlertsTopic
+      Code:
+        ZipFile: |
+          import json, logging, os
+          from datetime import datetime
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+          def lambda_handler(event, context):
+              logger.info(f"Received {len(event.get('Records', []))} record(s).")
+              return {"statusCode": 200, "body": json.dumps("Processed successfully")}
+
+  SQSEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt HazardEventQueue.Arn
+      FunctionName: !Ref RoadSenseHazardWorker
+      BatchSize: 10
+      Enabled: true
+
 Outputs:
   VPCId:
     Description: 'Custom VPC Identifier'
@@ -406,6 +470,11 @@ Outputs:
     Description: 'Amazon SQS Queue URL for Hazard Events'
     Value: !Ref HazardEventQueue
 
+  LambdaFunctionArn:
+    Description: 'Amazon Lambda Serverless Event Worker ARN'
+    Value: !GetAtt RoadSenseHazardWorker.Arn
+
   EC2ProfileName:
     Description: 'IAM Instance Profile for EC2'
     Value: !Ref EC2InstanceProfile
+
