@@ -1,0 +1,242 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+#database
+lib/backend/instance/*.db
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+/lib/backend/.env
+# -----------------------------------------------------------------------------
+# GitHub-style .gitignore for:
+#   Flutter (mobile & web & desktop)
+#   Firebase (project files + functions)
+#   Python (virtualenvs, bytecode)
+#   TensorFlow / ML (models, checkpoints, large artifacts)
+# -----------------------------------------------------------------------------
+
+# -----------------------
+# Dart / Flutter
+# -----------------------
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+# For Flutter apps: keep pubspec.lock under source control generally.
+# If you develop a package, you might want to ignore pubspec.lock.
+build/
+flutter_export_environment.sh
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Generated plugin registrant (keep if you intentionally check it in)
+**/GeneratedPluginRegistrant.*
+
+# -----------------------
+# Android
+# -----------------------
+/android/.gradle
+/android/app/*.keystore
+/android/app/*.jks
+/android/local.properties
+/android/**/gradle-wrapper.jar
+/android/**/gradle-wrapper.properties
+/android/captures/
+/android/.idea/
+/android/*.iml
+
+# Gradle build outputs
+**/build/
+**/captures/
+
+# -----------------------
+# iOS / macOS
+# -----------------------
+# Xcode
+**/Pods/
+**/Podfile.lock
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Runner/*.xcworkspace
+**/xcuserdata/
+**/DerivedData/
+# CocoaPods generated
+ios/Podfile.lock
+macos/Flutter/ephemeral/
+
+# -----------------------
+# Web
+# -----------------------
+web/.dart_tool/
+web/build/
+
+# -----------------------
+# Firebase (project + CLI + emulator)
+# -----------------------
+# Keep firebase_options.dart if using FlutterFire CLI (do NOT ignore it unless you want to)
+# Ignore platform-specific GoogleService files (include only if you intentionally commit them)
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+macos/Runner/GoogleService-Info.plist
+
+# Local Firebase state / CLI caches
+.firebase/
+.firebaserc
+firebase.json
+firebase-debug.log
+firebase-debug.*.log
+
+# Firebase Functions
+/functions/node_modules/
+/functions/.firebase/
+functions/.runtimeconfig.json
+functions/lib/
+functions/.cache
+
+# Emulator exports / auth state
+**/auth_export.json
+**/firestore_export/
+**/database_export/
+
+# -----------------------
+# Python
+# -----------------------
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtualenvs / env files
+env/
+venv/
+.venv/
+.ENV/
+.env
+.venv/
+pip-log.txt
+pip-wheel-metadata/
+
+# Packaging / distribution
+*.egg-info/
+dist/
+build/
+*.egg
+*.whl
+
+# Notebook checkpoints
+.ipynb_checkpoints
+
+# VSCode python extension caches
+.python-version
+
+# -----------------------
+# TensorFlow / Machine Learning artifacts
+# -----------------------
+# Saved models, checkpoints, large binary blobs
+
+export/
+checkpoints/
+checkpoints-*/
+*.ckpt
+*.ckpt.index
+*.ckpt.meta
+*.pb
+*.pbtxt
+*.tflite
+*.tfrecord
+*.tfrecords
+
+
+
+# Logs / events
+events.out.tfevents.*
+tensorboard/
+logs/
+mlruns/
+
+# Large model weights / folders you shouldn't commit
+models/
+weights/
+artifacts/
+dataset_cache/
+data/
+*.npy
+*.npz
+*.keras
+
+# -----------------------
+# Editor / IDE
+# -----------------------
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# -----------------------
+# OS / Misc
+# -----------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+
+# -----------------------
+# Optional: large binaries / caches (uncomment if you produce these)
+# -----------------------
+# *.zip
+# *.tar.gz
+# *.7z
+# *.bin
+# large_models/
+# checkpoints/
+
+# Web Admin
+web-admin/node_modules/
+web-admin/.env.local
+web-admin/.env.*.local
+
+lib/backend/venv/
+lib/backend/instance/*.db
+lib/backend/uploaded_images/
+instance/

@@ -1,0 +1,412 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'RoadSense - Cloud-Based Road Hazard Reporting Platform Infrastructure (VPC, EC2, RDS, S3, IAM, SSM, CloudWatch, SNS, SQS)'
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: 'roadsense-prod'
+    Description: 'Environment tag for resources'
+
+  DBUsername:
+    Type: String
+    Default: 'roadsense_admin'
+    Description: 'Master database username for Amazon RDS'
+
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Description: 'Master database password (min 8 chars) for Amazon RDS'
+    MinLength: 8
+
+  AlertEmail:
+    Type: String
+    Default: 'maintenance-team@roadsense.gov'
+    Description: 'Email address subscribed to Amazon SNS for critical hazard notifications'
+
+Resources:
+  # ============================================================================
+  # 1. NETWORKING: Amazon VPC, Subnets, Internet Gateway & Route Tables
+  # ============================================================================
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: '10.0.0.0/16'
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-vpc'
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-igw'
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: '10.0.1.0/24'
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-public-1'
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: '10.0.2.0/24'
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-public-2'
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: '10.0.10.0/24'
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-private-1'
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: '10.0.11.0/24'
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-private-2'
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-public-rt'
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTableAssoc1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  SubnetRouteTableAssoc2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  # ============================================================================
+  # 2. SECURITY GROUPS: EC2 & RDS (Least-Privilege Network Separation)
+  # ============================================================================
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: 'Allow inbound HTTP/HTTPS to EC2 and SSH from admin'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: '0.0.0.0/0'
+        - IpProtocol: tcp
+          FromPort: 6969
+          ToPort: 6969
+          CidrIp: '0.0.0.0/0'
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: '0.0.0.0/0'
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-ec2-sg'
+
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: 'Allow inbound PostgreSQL traffic ONLY from EC2 security group'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref EC2SecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-rds-sg'
+
+  # ============================================================================
+  # 3. STORAGE: Amazon S3 Bucket for Road Hazard Images
+  # ============================================================================
+  HazardImagesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'roadsense-hazards-${AWS::AccountId}-${AWS::Region}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: ['GET', 'POST', 'PUT']
+            AllowedOrigins: ['*']
+            MaxAge: 3000
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-media'
+
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref HazardImagesBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: '*'
+            Action: 's3:GetObject'
+            Resource: !Sub '${HazardImagesBucket.Arn}/*'
+
+  # ============================================================================
+  # 4. DATABASE: Amazon RDS PostgreSQL (Free Tier Eligible db.t3.micro, Single-AZ)
+  # ============================================================================
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: 'Isolated private subnets for RDS'
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-db-subnets'
+
+  PostgresDB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: '20'
+      DBInstanceClass: 'db.t3.micro'
+      DBName: 'roadsensedb'
+      Engine: 'postgres'
+      EngineVersion: '16.1'
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroup
+      MultiAZ: false
+      PubliclyAccessible: false
+      StorageType: 'gp2'
+      DeletionProtection: false
+      SkipFinalSnapshot: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-rds-postgres'
+
+  # ============================================================================
+  # 5. SECURITY & IAM: EC2 Instance Profile with Least-Privilege Access
+  # ============================================================================
+  EC2IAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${EnvironmentName}-ec2-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ec2.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      Policies:
+        - PolicyName: !Sub '${EnvironmentName}-least-privilege'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: S3HazardAccess
+                Effect: Allow
+                Action:
+                  - 's3:PutObject'
+                  - 's3:GetObject'
+                  - 's3:ListBucket'
+                Resource:
+                  - !GetAtt HazardImagesBucket.Arn
+                  - !Sub '${HazardImagesBucket.Arn}/*'
+              - Sid: SSMParameterStoreAccess
+                Effect: Allow
+                Action:
+                  - 'ssm:GetParameters'
+                  - 'ssm:GetParameter'
+                  - 'ssm:GetParametersByPath'
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/roadsense/*'
+              - Sid: SNSPublishAccess
+                Effect: Allow
+                Action: ['sns:Publish']
+                Resource: !Ref CriticalAlertsTopic
+              - Sid: SQSQueueAccess
+                Effect: Allow
+                Action:
+                  - 'sqs:SendMessage'
+                  - 'sqs:ReceiveMessage'
+                  - 'sqs:DeleteMessage'
+                Resource: !GetAtt HazardEventQueue.Arn
+              - Sid: CloudWatchLogging
+                Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                  - 'logs:DescribeLogStreams'
+                Resource: 'arn:aws:logs:*:*:*'
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub '${EnvironmentName}-ec2-profile'
+      Roles:
+        - !Ref EC2IAMRole
+
+  # ============================================================================
+  # 6. CONFIGURATION: AWS Systems Manager (SSM) Parameter Store
+  # ============================================================================
+  SSMDBHost:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: '/roadsense/db_host'
+      Type: String
+      Value: !GetAtt PostgresDB.Endpoint.Address
+      Description: 'Amazon RDS PostgreSQL endpoint hostname'
+
+  SSMDBName:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: '/roadsense/db_name'
+      Type: String
+      Value: 'roadsensedb'
+
+  SSMDBUser:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: '/roadsense/db_user'
+      Type: String
+      Value: !Ref DBUsername
+
+  SSMS3Bucket:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: '/roadsense/s3_bucket'
+      Type: String
+      Value: !Ref HazardImagesBucket
+
+  SSMSNSTopic:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: '/roadsense/sns_topic_arn'
+      Type: String
+      Value: !Ref CriticalAlertsTopic
+
+  SSMSQSQueue:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: '/roadsense/sqs_queue_url'
+      Type: String
+      Value: !Ref HazardEventQueue
+
+  # ============================================================================
+  # 7. ADDITIONAL CAPABILITY 1: Amazon SNS (Critical Hazard Notification)
+  # ============================================================================
+  CriticalAlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${EnvironmentName}-critical-alerts'
+      DisplayName: 'RoadSense Critical Hazard Alert Service'
+
+  EmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref CriticalAlertsTopic
+      Protocol: 'email'
+      Endpoint: !Ref AlertEmail
+
+  # ============================================================================
+  # 8. ADDITIONAL CAPABILITY 2: Amazon SQS (Asynchronous Hazard Queue)
+  # ============================================================================
+  HazardEventQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${EnvironmentName}-hazard-queue'
+      VisibilityTimeout: 60
+      MessageRetentionPeriod: 86400
+
+  # ============================================================================
+  # 9. MONITORING: Amazon CloudWatch Alarm (High CPU Utilization on EC2)
+  # ============================================================================
+  EC2HighCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${EnvironmentName}-high-cpu-alarm'
+      AlarmDescription: 'Fires if EC2 backend CPU exceeds 75% for 5 minutes'
+      MetricName: 'CPUUtilization'
+      Namespace: 'AWS/EC2'
+      Statistic: 'Average'
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 75
+      ComparisonOperator: 'GreaterThanOrEqualToThreshold'
+      AlarmActions:
+        - !Ref CriticalAlertsTopic
+
+Outputs:
+  VPCId:
+    Description: 'Custom VPC Identifier'
+    Value: !Ref VPC
+
+  PublicSubnetId:
+    Description: 'Public Subnet for EC2 Compute'
+    Value: !Ref PublicSubnet1
+
+  RDSEndpoint:
+    Description: 'Amazon RDS PostgreSQL Endpoint'
+    Value: !GetAtt PostgresDB.Endpoint.Address
+
+  S3BucketName:
+    Description: 'Amazon S3 Bucket for Media Storage'
+    Value: !Ref HazardImagesBucket
+
+  SNSTopicArn:
+    Description: 'Amazon SNS Topic for Critical Alerts'
+    Value: !Ref CriticalAlertsTopic
+
+  SQSQueueURL:
+    Description: 'Amazon SQS Queue URL for Hazard Events'
+    Value: !Ref HazardEventQueue
+
+  EC2ProfileName:
+    Description: 'IAM Instance Profile for EC2'
+    Value: !Ref EC2InstanceProfile
