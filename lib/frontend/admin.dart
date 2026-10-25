@@ -253,8 +253,8 @@
                               ),
                               children: [
                                 TileLayer(
-                                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                                  userAgentPackageName: 'com.roadsense.app',
+                                  urlTemplate: 'https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+                                  subdomains: const ['0', '1', '2', '3'],
                                 ),
                                 MarkerLayer(
                                   markers: issues.map((issue) {
