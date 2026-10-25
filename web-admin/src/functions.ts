@@ -88,14 +88,20 @@ export function getSeverityColor(severity?: string): string {
 export function formatDate(isoString?: string): string {
   if (!isoString) return 'Recent';
   try {
-    const d = new Date(isoString);
+    let raw = isoString.trim();
+    // If ISO timestamp has no timezone offset (no Z, no +/-offset), append Z so browser converts UTC to user local time
+    if (raw.includes('T') && !raw.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(raw)) {
+      raw = raw + 'Z';
+    }
+    const d = new Date(raw);
     if (isNaN(d.getTime())) return isoString;
-    return d.toLocaleDateString(undefined, {
+    return d.toLocaleString(undefined, {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
+      hour12: true,
     });
   } catch {
     return 'Recent';

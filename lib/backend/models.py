@@ -46,7 +46,7 @@ class IssueReport(db.Model):
             "confidence_score": round(self.confidence_score, 3) if self.confidence_score else 0.85,
             "image_url": self.image_url or "",
             "image": img,
-            "timestamp": self.created_at.isoformat() if self.created_at else datetime.utcnow().isoformat(),
-            "created_at": self.created_at.isoformat() if self.created_at else datetime.utcnow().isoformat(),
+            "timestamp": (self.created_at.isoformat() + "Z") if self.created_at else (datetime.utcnow().isoformat() + "Z"),
+            "created_at": (self.created_at.isoformat() + "Z") if self.created_at else (datetime.utcnow().isoformat() + "Z"),
             "label": self.label,
         }

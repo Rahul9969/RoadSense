@@ -166,9 +166,6 @@ export function App() {
           onSelectStatus={(s) => setActiveStatus(s)}
         />
 
-        {/* Live Cloud Infrastructure Telemetry */}
-        <CloudTelemetryCard telemetry={telemetry} isLoading={isLoading} />
-
         {/* ASTM D6433 Pavement Condition & Municipal Triage Analytics */}
         <TriageAnalyticsCard analytics={triageAnalytics} isLoading={isLoading} />
 
@@ -228,7 +225,7 @@ export function App() {
               <option value="all">All Severities</option>
               <option value="low">Low Severity</option>
               <option value="medium">Medium Severity</option>
-              <option value="critical">Critical (SNS)</option>
+              <option value="critical">Critical Priority</option>
             </select>
           </div>
         </div>

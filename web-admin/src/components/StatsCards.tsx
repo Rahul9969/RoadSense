@@ -66,7 +66,7 @@ export const StatsCards: React.FC<StatsCardsProps> = ({
     },
     {
       id: 'critical',
-      label: 'Critical (SNS)',
+      label: 'Critical Hazards',
       count: stats.critical,
       icon: Flame,
       color: 'text-rose-600',

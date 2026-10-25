@@ -29,11 +29,11 @@ export const Header: React.FC<HeaderProps> = ({
               </h1>
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-white/20 text-white backdrop-blur-sm border border-white/25">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse-dot" />
-                AWS Cloud v2.0
+                Live Portal
               </span>
             </div>
             <p className="text-purple-100 text-sm font-medium flex items-center gap-2">
-              <span>Municipality Issue Management</span>
+              <span>Municipality Road Hazard Management</span>
               <span className="text-purple-300">•</span>
               <span className="text-purple-200">Logged in as {user?.username || 'Administrator'}</span>
             </p>
@@ -41,10 +41,10 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Action Tools */}
           <div className="flex items-center gap-2.5 self-start md:self-auto">
-            {/* Live Cloud Architecture Indicator */}
+            {/* Municipal Badge */}
             <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/15 border border-white/10 text-xs text-purple-100 backdrop-blur-md shadow-sm">
-              <Cloud className="w-4 h-4 text-sky-300" />
-              <span>EC2 • RDS • S3 • SQS • SNS</span>
+              <ShieldCheck className="w-4 h-4 text-emerald-300" />
+              <span>Verified Municipal Session</span>
             </div>
 
             {/* Refresh Data Button */}

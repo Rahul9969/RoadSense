@@ -7,6 +7,7 @@ import 'auth.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart'; // Added for username access
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb; //for platform check
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -23,6 +24,7 @@ class _MyCitizenState extends State<MyCitizen> {
   // --- STATE VARIABLES ---
   int _selectedIndex = 0;
   XFile? _selectedImage;
+  Uint8List? _annotatedImageBytes;
   final _descriptionController = TextEditingController();
   String _currentAddress = "Tap to pin location";
   bool _isAnalyzing = false;
@@ -178,9 +180,12 @@ void _showFullImage(String imageStr) {
       if (image != null) {
         setState(() {
           _selectedImage = image; //for xfile
+          _annotatedImageBytes = null;
+          _prediction = "Analyzing road surface...";
         });
 
         await _determinePosition();
+        await _sendForInference();
       }
     } catch (e) {
       print("Image picker error: $e");
@@ -283,6 +288,7 @@ void _showFullImage(String imageStr) {
             "lat": _latitude, 
             "lng": _longitude,
           },
+          "description": _descriptionController.text.trim(),
         }),
       ).timeout(
         const Duration(seconds: 30),
@@ -306,12 +312,25 @@ void _showFullImage(String imageStr) {
       final data = jsonDecode(response.body);
 
       if (mounted) {
+        Uint8List? annotatedBytes;
+        final segStr = data["segmented_image"];
+        if (segStr != null && segStr is String && segStr.length > 50) {
+          try {
+            annotatedBytes = base64Decode(segStr);
+          } catch (err) {
+            print("Error decoding segmented_image: $err");
+          }
+        }
+
         setState(() {
           _isAnalyzing = false;
           _prediction = data["label"] ?? "Issue Detected";
           _confidenceScore = (data["confidence_score"] ?? 0.0).toDouble();
+          if (annotatedBytes != null) {
+            _annotatedImageBytes = annotatedBytes;
+          }
         });
-        _showSnackBar("Analysis complete!", Colors.green);
+        _showSnackBar("AI Detected: $_prediction", Colors.green);
       }
     } catch (e) {
       print("Inference error: $e");
@@ -414,6 +433,8 @@ Future<void> _submitReport() async {
       // Clear form
       setState(() {
         _selectedImage = null;
+        _annotatedImageBytes = null;
+        _prediction = "Awaiting image...";
         _descriptionController.clear();
         _selectedIndex = 1; // Navigate to reports tab
         _isAnalyzing  = false;
@@ -539,14 +560,19 @@ icon: const Icon(Icons.notifications_active_outlined),
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: Colors.grey[200]!),
-                image: _selectedImage != null
+                image: _annotatedImageBytes != null
                     ? DecorationImage(
-                        image: kIsWeb
-                            ? NetworkImage(_selectedImage!.path) //web uses blob URLs
-                            : FileImage(File(_selectedImage!.path)) as ImageProvider, //mobile uses file paths
+                        image: MemoryImage(_annotatedImageBytes!),
                         fit: BoxFit.contain,
                       )
-                    : null,
+                    : (_selectedImage != null
+                        ? DecorationImage(
+                            image: kIsWeb
+                                ? NetworkImage(_selectedImage!.path)
+                                : FileImage(File(_selectedImage!.path)) as ImageProvider,
+                            fit: BoxFit.contain,
+                          )
+                        : null),
               ),
               child: _selectedImage == null
                   ? Column(
