@@ -88,12 +88,16 @@ def infer_image():
 
         # 2. Run AI Inference / Segmentation
         hint = f"{description}".strip()
-        annotated_img, confidence, predicted_class = run_inference(pil_image, hint_text=hint)
+        infer_res = run_inference(pil_image, hint_text=hint)
+        annotated_img, confidence, predicted_class = infer_res
         # Prioritize true AI prediction over static form dropdown defaults
         final_label = predicted_class if predicted_class else (custom_label or "Potholes")
 
-        # Determine severity automatically by hazard classification
-        if final_label in ["Potholes", "Waterlogging"]:
+        # Determine severity automatically from AI engine or hazard classification
+        ai_severity = getattr(infer_res, "severity", None)
+        if ai_severity:
+            severity = str(ai_severity).lower()
+        elif final_label in ["Potholes", "Waterlogging"]:
             severity = "critical"
         elif final_label in ["Damaged Road", "Broken Streetlight"]:
             severity = "medium"
