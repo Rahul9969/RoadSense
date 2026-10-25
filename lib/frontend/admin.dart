@@ -253,8 +253,7 @@
                               ),
                               children: [
                                 TileLayer(
-                                  urlTemplate: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
-                                  subdomains: const ['a', 'b', 'c', 'd'],
+                                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                                   userAgentPackageName: 'com.roadsense.app',
                                 ),
                                 MarkerLayer(

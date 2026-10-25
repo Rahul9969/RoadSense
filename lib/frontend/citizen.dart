@@ -53,7 +53,7 @@ void _refreshData() {
     print("Refreshing user reports... Sequence: $_refreshCounter" );
   });
 }
-void _showFullImage(String base64String) {
+void _showFullImage(String imageStr) {
   showDialog(
     context: context,
     builder: (context) => Dialog(
@@ -62,13 +62,22 @@ void _showFullImage(String base64String) {
       child: Stack(
         alignment: Alignment.topRight,
         children: [
-          // The actual image
+          // The actual image (S3 Network or Base64)
           ClipRRect(
             borderRadius: BorderRadius.circular(15),
-            child: Image.memory(
-              base64Decode(base64String),
-              fit: BoxFit.contain,
-            ),
+            child: imageStr.startsWith('http')
+                ? Image.network(
+                    imageStr,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) =>
+                        const Center(child: Icon(Icons.broken_image, color: Colors.white, size: 50)),
+                  )
+                : Image.memory(
+                    base64Decode(imageStr),
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) =>
+                        const Center(child: Icon(Icons.broken_image, color: Colors.white, size: 50)),
+                  ),
           ),
           // Close button
           IconButton(
@@ -708,8 +717,7 @@ Widget _buildLocationTile() {
             ),
             children: [
               TileLayer(
-                urlTemplate: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
-                subdomains: const ['a', 'b', 'c', 'd'],
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.roadsense.app',
               ),
               if (_latitude != null)
@@ -773,7 +781,7 @@ Widget _buildContributionsTab() {
           return _buildTimelineCard(
             report['label'] ?? "Issue", 
             report['status'] ?? "Pending",
-            report['segmented_image'],
+            report['image_url'] ?? report['image'] ?? report['segmented_image'],
           );
         },
       );
@@ -781,7 +789,7 @@ Widget _buildContributionsTab() {
   ),
   );
 }
-Widget _buildTimelineCard(String title, String status, String? base64Image) {
+Widget _buildTimelineCard(String title, String status, String? imageSrc) {
   final statusConfig = {
     'solved': {'color': Colors.green, 'icon': Icons.check_circle_outline},
     'team dispatched': {'color': Colors.blue, 'icon': Icons.local_shipping_outlined},
@@ -805,8 +813,8 @@ Widget _buildTimelineCard(String title, String status, String? base64Image) {
     child: ExpansionTile(
       leading: GestureDetector(
         onTap: () {
-          if (base64Image != null && base64Image.isNotEmpty) {
-            _showFullImage(base64Image); 
+          if (imageSrc != null && imageSrc.isNotEmpty) {
+            _showFullImage(imageSrc); 
           }
         },
         child: SizedBox(
@@ -814,7 +822,7 @@ Widget _buildTimelineCard(String title, String status, String? base64Image) {
           height: 48,
           child: Stack(
             children: [
-              // 1. The Image (Replaces the question mark)
+              // 1. The Image (S3 Network or Base64)
               Container(
                 width: 44,
                 height: 44,
@@ -824,13 +832,20 @@ Widget _buildTimelineCard(String title, String status, String? base64Image) {
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: base64Image != null && base64Image.isNotEmpty
-                      ? Image.memory(
-                          base64Decode(base64Image),
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => 
-                              const Icon(Icons.broken_image, size: 20),
-                        )
+                  child: imageSrc != null && imageSrc.isNotEmpty
+                      ? (imageSrc.startsWith('http')
+                          ? Image.network(
+                              imageSrc,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => 
+                                  const Icon(Icons.broken_image, size: 20),
+                            )
+                          : Image.memory(
+                              base64Decode(imageSrc),
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => 
+                                  const Icon(Icons.broken_image, size: 20),
+                            ))
                       : const Icon(Icons.image, size: 20, color: Colors.grey),
                 ),
               ),
