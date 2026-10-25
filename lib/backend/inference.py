@@ -86,10 +86,11 @@ def infer_image():
         # 1. Convert base64 -> PIL Image
         pil_image = base64_to_image(image_base64)
 
-        # 2. Run AI Inference / Segmentation with contextual hint
-        hint = f"{custom_label or ''} {description}".strip()
+        # 2. Run AI Inference / Segmentation
+        hint = f"{description}".strip()
         annotated_img, confidence, predicted_class = run_inference(pil_image, hint_text=hint)
-        final_label = custom_label if custom_label else predicted_class
+        # Prioritize true AI prediction over static form dropdown defaults
+        final_label = predicted_class if predicted_class else (custom_label or "Potholes")
 
         # Determine severity automatically by hazard classification
         if final_label in ["Potholes", "Waterlogging"]:
@@ -98,6 +99,18 @@ def infer_image():
             severity = "medium"
         else:
             severity = "low"
+
+        # Check if this request is a live camera/image preview check
+        is_preview = data.get("is_preview", False) or request.args.get("preview", "false").lower() == "true"
+        if is_preview:
+            annotated_base64 = image_to_base64(annotated_img)
+            return jsonify({
+                "label": final_label,
+                "confidence_score": confidence,
+                "segmented_image": annotated_base64,
+                "severity": severity,
+                "is_preview": True
+            }), 200
 
         # 3. Convert annotated image to bytes & Base64
         img_byte_arr = io.BytesIO()

@@ -233,8 +233,86 @@ def add_image_figure(doc, img_path, caption, width_in=6.2):
         r_cap.italic = True
         r_cap.font.name = "Calibri"
         r_cap.font.size = Pt(8.5)
-        r_cap.font.color.rgb = RGBColor(100, 116, 139)
-    else:
-        add_body_paragraph(doc, f"[Image file not found: {img_path}]", bold_prefix="Warning: ")
+def add_evidence_placeholder(doc, resource_title, resource_arn, details_dict, instruction=""):
+    """
+    Renders an official, beautifully styled Evidence Container for AWS Resources
+    with dashed border, metadata tags, and explicit screenshot placement instructions.
+    """
+    tbl = doc.add_table(rows=1, cols=1)
+    tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+    cell = tbl.cell(0, 0)
+    set_cell_background(cell, "F8FAFC")
+    set_cell_margins(cell, top=180, bottom=180, left=240, right=240)
+    
+    tcPr = cell._tc.get_or_add_tcPr()
+    borders = parse_xml(f'''
+        <w:tcBorders {nsdecls("w")}>
+            <w:left w:val="single" w:sz="24" w:space="0" w:color="2563EB"/>
+            <w:top w:val="dashed" w:sz="12" w:space="0" w:color="94A3B8"/>
+            <w:right w:val="dashed" w:sz="12" w:space="0" w:color="94A3B8"/>
+            <w:bottom w:val="dashed" w:sz="12" w:space="0" w:color="94A3B8"/>
+        </w:tcBorders>
+    ''')
+    tcPr.append(borders)
+    
+    p = cell.paragraphs[0]
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    p.paragraph_format.space_before = Pt(2)
+    p.paragraph_format.space_after = Pt(4)
+    
+    r_hdr = p.add_run(f"📷 EVIDENCE SCREENSHOT PLACEHOLDER: {resource_title.upper()}\n")
+    r_hdr.bold = True
+    r_hdr.font.name = "Calibri"
+    r_hdr.font.size = Pt(11)
+    r_hdr.font.color.rgb = RGBColor(37, 99, 235)
+    
+    p_meta = cell.add_paragraph()
+    p_meta.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    p_meta.paragraph_format.space_before = Pt(2)
+    p_meta.paragraph_format.space_after = Pt(2)
+    
+    r_arn_lbl = p_meta.add_run("Target Resource Identifier / ARN: ")
+    r_arn_lbl.bold = True
+    r_arn_lbl.font.size = Pt(9.5)
+    r_arn = p_meta.add_run(f"{resource_arn}\n")
+    r_arn.font.name = "Consolas"
+    r_arn.font.size = Pt(9)
+    r_arn.font.color.rgb = RGBColor(71, 85, 105)
+    
+    for k, v in details_dict.items():
+        rk = p_meta.add_run(f"• {k}: ")
+        rk.bold = True
+        rk.font.size = Pt(9)
+        rv = p_meta.add_run(f"{v}\n")
+        rv.font.size = Pt(9)
+        rv.font.color.rgb = RGBColor(71, 85, 105)
+        
+    p_instr = cell.add_paragraph()
+    p_instr.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_instr.paragraph_format.space_before = Pt(14)
+    p_instr.paragraph_format.space_after = Pt(10)
+    
+    r_box = p_instr.add_run("┌────────────────────────────────────────────────────────────────────────────────────────┐\n")
+    r_box.font.name = "Consolas"
+    r_box.font.size = Pt(8.5)
+    r_box.font.color.rgb = RGBColor(148, 163, 184)
+    
+    r_in = p_instr.add_run("PASTE YOUR AWS CONSOLE SCREENSHOT HERE\n")
+    r_in.bold = True
+    r_in.font.name = "Calibri"
+    r_in.font.size = Pt(11)
+    r_in.font.color.rgb = RGBColor(71, 85, 105)
+    
+    r_desc = p_instr.add_run(instruction or "Paste screenshot showing active resource, configurations, and metric graphs.\n")
+    r_desc.font.italic = True
+    r_desc.font.size = Pt(9.5)
+    r_desc.font.color.rgb = RGBColor(100, 116, 139)
+    
+    r_box2 = p_instr.add_run("└────────────────────────────────────────────────────────────────────────────────────────┘")
+    r_box2.font.name = "Consolas"
+    r_box2.font.size = Pt(8.5)
+    r_box2.font.color.rgb = RGBColor(148, 163, 184)
+    
+    doc.add_paragraph()
 
 print("Docx generator helper functions initialized successfully.")

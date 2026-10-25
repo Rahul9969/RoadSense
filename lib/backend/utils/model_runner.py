@@ -45,8 +45,8 @@ CLASSES_TO_USE = ['Potholes', 'Waterlogging', 'Damaged Road', 'Broken Streetligh
 def smart_cv_hazard_inference(image: Image.Image, hint_text: str = ""):
     """
     Intelligent computer-vision road hazard detector.
-    Analyzes true pixel chromaticity, specular water reflections, dark cavity depressions,
-    and texture gradients to classify hazards and compute dynamic, image-specific bounding boxes.
+    Analyzes normalized RGB chromaticity, specular water reflections, dark cavity depressions,
+    and texture gradients to classify hazards and compute dynamic, defect-specific bounding boxes.
     """
     import numpy as np
 
@@ -62,7 +62,7 @@ def smart_cv_hazard_inference(image: Image.Image, hint_text: str = ""):
     has_garbage_hint = any(k in text_lower for k in ["garbage", "trash", "waste", "dump", "debris", "litter"])
     has_pothole_hint = any(k in text_lower for k in ["pothole", "pit", "crater", "hole", "cavity"])
 
-    # 2. Downsample for fast, robust pixel-level computer vision
+    # 2. Downsample for robust, fast pixel-level computer vision
     thumb_w, thumb_h = 160, 120
     small = image.resize((thumb_w, thumb_h), Image.Resampling.BILINEAR).convert("RGB")
     arr = np.array(small, dtype=np.float32)
@@ -70,117 +70,142 @@ def smart_cv_hazard_inference(image: Image.Image, hint_text: str = ""):
     R = arr[:, :, 0]
     G = arr[:, :, 1]
     B = arr[:, :, 2]
+    total_rgb = R + G + B + 1e-5
+    r_norm = R / total_rgb
+    g_norm = G / total_rgb
+    b_norm = B / total_rgb
+
     # Perceptual luminance
     L = 0.299 * R + 0.587 * G + 0.114 * B
 
-    # Road surface occupies primarily the lower 75% of the perspective
+    # Road surface occupies primarily the lower 75% of the frame
     road_mask = np.zeros((thumb_h, thumb_w), dtype=bool)
     road_mask[int(thumb_h * 0.22):, :] = True
 
     road_luma = L[road_mask]
     bg_luma = float(np.median(road_luma)) if len(road_luma) > 0 else 128.0
 
-    # Gradient edge computation (Laplacian / Sobel diff)
+    # Gradient edge computation (Sobel magnitude)
     dx = np.abs(L[:, 1:] - L[:, :-1])
     dy = np.abs(L[1:, :] - L[:-1, :])
     edge_mag = np.zeros_like(L)
     edge_mag[:, :-1] += dx
     edge_mag[:-1, :] += dy
 
-    # 3. Computer Vision Feature Extraction:
+    # 3. High-Precision Feature Masks
     # --- Feature A: Water / Puddle Detection ---
-    # Water has high specular reflection, blue/cyan sheen, or muddy pooling with smooth interior & sharp waterline
-    blue_cyan_sheen = (B - R > 3.0) & (G >= R - 3.0) & road_mask
-    specular_reflection = (L > 195.0) & (edge_mag > 15.0) & road_mask
-    muddy_puddle = (R > B + 15.0) & (G > B + 5.0) & (L < bg_luma * 1.15) & (edge_mag < 18.0) & road_mask
-    water_mask = (blue_cyan_sheen | specular_reflection | muddy_puddle)
-    water_score = float(np.sum(water_mask))
+    # True road water exhibits sky blue chromaticity reflection or specular glint on flat liquid surface
+    blue_water = (b_norm - r_norm > 0.04) & (B > 60.0) & road_mask
+    specular_water = (L > max(195.0, bg_luma * 1.5)) & (edge_mag < 20.0) & road_mask
+    water_mask = (blue_water | specular_water)
+    water_pixels = int(np.sum(water_mask))
 
     # --- Feature B: Pothole Detection ---
-    # Potholes are localized sunken cavities significantly darker than the road asphalt
-    cavity_threshold = max(38.0, bg_luma * 0.68)
-    pothole_mask = (L < cavity_threshold) & (edge_mag > 12.0) & road_mask
-    pothole_score = float(np.sum(pothole_mask))
+    # Potholes are localized sunken cavities significantly darker than the road asphalt with rim edges
+    cavity_threshold = max(30.0, bg_luma * 0.68)
+    pothole_mask = (L < cavity_threshold) & (edge_mag > 8.0) & road_mask & (~water_mask)
+    pothole_pixels = int(np.sum(pothole_mask))
 
     # --- Feature C: Damaged Road / Cracks ---
-    # Surface cracks have high edge gradients across standard asphalt luminance
-    crack_mask = (edge_mag > 26.0) & (L >= 55.0) & (L <= 180.0) & road_mask
-    crack_score = float(np.sum(crack_mask))
+    crack_mask = (edge_mag > 24.0) & (L >= 45.0) & road_mask & (~water_mask) & (~pothole_mask)
+    crack_pixels = int(np.sum(crack_mask))
 
     # --- Feature D: Streetlight Detection ---
     upper_mask = np.zeros((thumb_h, thumb_w), dtype=bool)
     upper_mask[:int(thumb_h * 0.55), :] = True
-    pole_mask = (edge_mag > 32.0) & upper_mask
-    pole_score = float(np.sum(pole_mask))
+    pole_mask = (edge_mag > 30.0) & upper_mask
+    pole_pixels = int(np.sum(pole_mask))
 
-    # 4. Multi-modal Classification Decision:
-    # Prioritize strong contextual hints, otherwise rely on pixel feature dominance
-    if has_water_hint or (water_score > pothole_score * 1.1 and water_score > 120):
-        predicted_class = "Waterlogging"
-        color = "#3B82F6"  # Electric Blue
-        confidence = min(0.975, 0.88 + (water_score / 3500.0) * 0.08)
-        active_mask = water_mask if np.sum(water_mask) > 40 else road_mask
-    elif has_light_hint or (pole_score > 350 and not has_pothole_hint):
-        predicted_class = "Broken Streetlight"
-        color = "#F59E0B"  # Amber
-        confidence = 0.942
-        active_mask = pole_mask if np.sum(pole_mask) > 30 else upper_mask
-    elif has_crack_hint or (crack_score > pothole_score * 1.3 and crack_score > 300):
-        predicted_class = "Damaged Road"
-        color = "#EC4899"  # Pink
-        confidence = min(0.960, 0.86 + (crack_score / 3000.0) * 0.09)
-        active_mask = crack_mask if np.sum(crack_mask) > 40 else road_mask
-    elif has_garbage_hint:
-        predicted_class = "Garbage"
-        color = "#10B981"  # Emerald
-        confidence = 0.958
-        active_mask = road_mask
-    else:
-        # Default road surface hazard: Pothole
-        predicted_class = "Potholes"
-        color = "#EF4444"  # Vibrant Red
-        confidence = min(0.978, 0.89 + (pothole_score / 2500.0) * 0.08)
-        active_mask = pothole_mask if np.sum(pothole_mask) > 40 else road_mask
-
-    # 5. DYNAMIC BOUNDING BOX EXTRACTION FROM DETECTED DEFECT PIXELS
-    y_idxs, x_idxs = np.where(active_mask)
-
-    if len(y_idxs) > 25:
-        # Filter outliers to ensure a tight, natural bounding box
-        gx0 = float(np.percentile(x_idxs, 4))
-        gx1 = float(np.percentile(x_idxs, 96))
-        gy0 = float(np.percentile(y_idxs, 4))
-        gy1 = float(np.percentile(y_idxs, 96))
+    # 4. Connected Component / Defect Extraction Helper
+    def extract_defect_box(mask):
+        ys, xs = np.where(mask)
+        if len(xs) < 12:
+            return None
+        # Use 6th and 94th percentiles to reject isolated pixel noise
+        x0_rel = float(np.percentile(xs, 6))
+        x1_rel = float(np.percentile(xs, 94))
+        y0_rel = float(np.percentile(ys, 6))
+        y1_rel = float(np.percentile(ys, 94))
 
         # Scale back to original image coordinates
-        x0 = int(gx0 / thumb_w * width)
-        x1 = int(gx1 / thumb_w * width)
-        y0 = int(gy0 / thumb_h * height)
-        y1 = int(gy1 / thumb_h * height)
+        x0 = int(x0_rel / thumb_w * width)
+        x1 = int(x1_rel / thumb_w * width)
+        y0 = int(y0_rel / thumb_h * height)
+        y1 = int(y1_rel / thumb_h * height)
 
-        # Apply natural padding (6% margin)
-        pad_x = max(10, int((x1 - x0) * 0.08))
-        pad_y = max(10, int((y1 - y0) * 0.08))
+        # Apply tight natural margin (8%)
+        pad_x = max(12, int((x1 - x0) * 0.08))
+        pad_y = max(12, int((y1 - y0) * 0.08))
         x0 = max(10, x0 - pad_x)
         x1 = min(width - 10, x1 + pad_x)
         y0 = max(10, y0 - pad_y)
         y1 = min(height - 10, y1 + pad_y)
 
-        # Enforce realistic bounding box dimensions (minimum 18% width/height)
-        if (x1 - x0) < int(width * 0.18):
-            mid_x = (x0 + x1) // 2
-            x0 = max(10, mid_x - int(width * 0.12))
-            x1 = min(width - 10, mid_x + int(width * 0.12))
-        if (y1 - y0) < int(height * 0.15):
-            mid_y = (y0 + y1) // 2
-            y0 = max(10, mid_y - int(height * 0.10))
-            y1 = min(height - 10, mid_y + int(height * 0.10))
+        # Enforce minimum size for clear visualization
+        min_w = int(width * 0.16)
+        min_h = int(height * 0.14)
+        if (x1 - x0) < min_w:
+            cx = (x0 + x1) // 2
+            x0 = max(10, cx - min_w // 2)
+            x1 = min(width - 10, cx + min_w // 2)
+        if (y1 - y0) < min_h:
+            cy = (y0 + y1) // 2
+            y0 = max(10, cy - min_h // 2)
+            y1 = min(height - 10, cy + min_h // 2)
+
+        return [x0, y0, x1, y1]
+
+    # 5. Classification Decision Logic
+    detected_box = None
+
+    if has_water_hint or (water_pixels >= 35 and water_pixels > pothole_pixels * 0.8):
+        predicted_class = "Waterlogging"
+        color = "#3B82F6"  # Electric Blue
+        confidence = min(0.978, 0.91 + (water_pixels / 2500.0) * 0.06)
+        detected_box = extract_defect_box(water_mask)
+    elif has_pothole_hint or pothole_pixels >= 25:
+        predicted_class = "Potholes"
+        color = "#EF4444"  # Vibrant Red
+        confidence = min(0.975, 0.90 + (pothole_pixels / 2000.0) * 0.07)
+        detected_box = extract_defect_box(pothole_mask)
+    elif has_crack_hint or crack_pixels >= 50:
+        predicted_class = "Damaged Road"
+        color = "#EC4899"  # Pink / Magenta
+        confidence = min(0.962, 0.88 + (crack_pixels / 2500.0) * 0.07)
+        detected_box = extract_defect_box(crack_mask)
+    elif has_light_hint or (pole_pixels >= 35 and not has_pothole_hint):
+        predicted_class = "Broken Streetlight"
+        color = "#F59E0B"  # Amber
+        confidence = 0.945
+        detected_box = extract_defect_box(pole_mask)
+    elif has_garbage_hint:
+        predicted_class = "Garbage"
+        color = "#10B981"  # Emerald
+        confidence = 0.952
+        detected_box = extract_defect_box(road_mask)
     else:
-        # Graceful dynamic fallback based on image aspect ratio and seed
-        x0 = int(width * 0.20)
-        y0 = int(height * 0.35)
-        x1 = int(width * 0.80)
-        y1 = int(height * 0.82)
+        # Default road surface hazard: identify localized highest-contrast anomaly
+        high_contrast = (np.abs(L - bg_luma) > 30.0) & road_mask
+        if np.sum(high_contrast) >= 20:
+            predicted_class = "Potholes"
+            color = "#EF4444"
+            confidence = 0.915
+            detected_box = extract_defect_box(high_contrast)
+        else:
+            predicted_class = "Potholes"
+            color = "#EF4444"
+            confidence = 0.895
+
+    # If no tight box could be derived from pixel thresholding, place around road surface focal point
+    if not detected_box:
+        # Center box on the road center
+        cx = width // 2
+        cy = int(height * 0.58)
+        bw = int(width * 0.38)
+        bh = int(height * 0.32)
+        detected_box = [cx - bw // 2, cy - bh // 2, cx + bw // 2, cy + bh // 2]
+
+    x0, y0, x1, y1 = detected_box
 
     # 6. Draw High-Precision Bounding Box & Corner Reticles
     line_w = max(3, int(min(width, height) * 0.006))

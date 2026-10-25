@@ -284,6 +284,7 @@ void _showFullImage(String imageStr) {
         body: jsonEncode({
           "username": username,
           "image": base64Image,
+          "is_preview": true,
           "location": {
             "lat": _latitude, 
             "lng": _longitude,
@@ -400,6 +401,7 @@ Future<void> _submitReport() async {
     final reportData = {
       'username': username,
       'image': base64Image,
+      'label': _prediction != "Awaiting image..." ? _prediction : "Road Hazard",
       'location': {
         'lat': _latitude,
         'lng': _longitude

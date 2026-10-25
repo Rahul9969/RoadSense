@@ -11,7 +11,6 @@ import { ImageModal } from './components/ImageModal';
 import { SkeletonLoader } from './components/SkeletonLoader';
 import { ApiConfigModal } from './components/ApiConfigModal';
 import { LoginView } from './components/LoginView';
-import { CloudTelemetryCard } from './components/CloudTelemetryCard';
 import { TriageAnalyticsCard } from './components/TriageAnalyticsCard';
 
 export function App() {
