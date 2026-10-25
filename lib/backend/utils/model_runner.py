@@ -88,20 +88,22 @@ def gemini_vision_hazard_detection(image: Image.Image, hint_text: str = ""):
 
     try:
         width, height = image.size
-        # Optimize image for Vision REST API (< 1MB)
-        max_dim = 1024
+        # Optimize image for Vision REST API (fast upload, < 500KB)
+        max_dim = 720
         img_for_api = image.copy()
         if max(width, height) > max_dim:
             scale = max_dim / float(max(width, height))
             img_for_api = img_for_api.resize((int(width * scale), int(height * scale)), Image.Resampling.BILINEAR)
 
         buf = io.BytesIO()
-        img_for_api.convert("RGB").save(buf, format="JPEG", quality=85)
+        img_for_api.convert("RGB").save(buf, format="JPEG", quality=80)
         b64_image = base64.b64encode(buf.getvalue()).decode("utf-8")
 
         prompt = (
             "You are RoadSense AI, an expert civil engineering and municipal road hazard detection system.\n"
-            "Analyze this roadway/civic image to identify road damage and hazards.\n"
+            "Analyze this roadway/civic image carefully to detect road defects and damage.\n"
+            "Identify whether there are Potholes, Waterlogging, Damaged Road (cracks/fissures), Broken Streetlight, or Garbage.\n"
+            "If there is any dark hole, cavity, depression, or crater in the asphalt/concrete, label it as 'Potholes'.\n"
             f"Contextual citizen report note: '{hint_text}'.\n\n"
             "Respond ONLY with a JSON object in this exact schema:\n"
             "{\n"
@@ -112,7 +114,7 @@ def gemini_vision_hazard_detection(image: Image.Image, hint_text: str = ""):
             "  \"box_2d\": [ymin, xmin, ymax, xmax],\n"
             "  \"reasoning\": \"Detailed assessment of the hazard and risk to vehicles\"\n"
             "}\n"
-            "Coordinates in box_2d must be integers normalized between 0 and 1000 enclosing the most dangerous road defect."
+            "Coordinates in box_2d must be integers normalized between 0 and 1000 tightly surrounding the hazard (especially enclosing the hole or cavity)."
         )
 
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
@@ -136,7 +138,7 @@ def gemini_vision_hazard_detection(image: Image.Image, hint_text: str = ""):
             }
         }
 
-        resp = requests.post(url, json=payload, timeout=6)
+        resp = requests.post(url, json=payload, timeout=25)
         if resp.status_code != 200:
             logger.warning(f"Gemini API returned status {resp.status_code}: {resp.text[:200]}")
             return None
@@ -268,16 +270,16 @@ def smart_cv_hazard_inference(image: Image.Image, hint_text: str = ""):
     edge_mag[:-1, :] += dy
 
     # 3. High-Precision Feature Masks
-    # --- Feature A: Water / Puddle Detection ---
-    blue_water = (b_norm - r_norm > 0.04) & (B > 60.0) & road_mask
-    specular_water = (L > max(195.0, bg_luma * 1.5)) & (edge_mag < 20.0) & road_mask
-    water_mask = (blue_water | specular_water)
-    water_pixels = int(np.sum(water_mask))
-
-    # --- Feature B: Pothole Detection ---
-    cavity_threshold = max(30.0, bg_luma * 0.68)
-    pothole_mask = (L < cavity_threshold) & (edge_mag > 8.0) & road_mask & (~water_mask)
+    # --- Feature A: Pothole Cavity Detection (dark depression in road) ---
+    cavity_threshold = max(45.0, bg_luma * 0.72)
+    pothole_mask = (L < cavity_threshold) & (edge_mag > 6.0) & road_mask
     pothole_pixels = int(np.sum(pothole_mask))
+
+    # --- Feature B: Water / Puddle Detection ---
+    blue_water = (b_norm - r_norm > 0.04) & (B > 60.0) & road_mask & (~pothole_mask)
+    specular_water = (L > max(195.0, bg_luma * 1.5)) & (edge_mag < 20.0) & road_mask & (~pothole_mask)
+    water_mask = blue_water if not has_water_hint else (blue_water | specular_water)
+    water_pixels = int(np.sum(water_mask))
 
     # --- Feature C: Damaged Road / Cracks ---
     crack_mask = (edge_mag > 24.0) & (L >= 45.0) & road_mask & (~water_mask) & (~pothole_mask)
@@ -327,18 +329,18 @@ def smart_cv_hazard_inference(image: Image.Image, hint_text: str = ""):
     # 5. Classification Decision Logic
     detected_box = None
 
-    if has_water_hint or (water_pixels >= 35 and water_pixels > pothole_pixels * 0.8):
+    if has_pothole_hint or pothole_pixels >= 15:
+        predicted_class = "Potholes"
+        color = "#EF4444"  # Vibrant Red
+        confidence = min(0.985, 0.92 + (pothole_pixels / 2000.0) * 0.06)
+        severity = "critical"
+        detected_box = extract_defect_box(pothole_mask)
+    elif has_water_hint or (water_pixels >= 40 and pothole_pixels < 10):
         predicted_class = "Waterlogging"
         color = "#3B82F6"  # Electric Blue
         confidence = min(0.978, 0.91 + (water_pixels / 2500.0) * 0.06)
         severity = "critical"
         detected_box = extract_defect_box(water_mask)
-    elif has_pothole_hint or pothole_pixels >= 25:
-        predicted_class = "Potholes"
-        color = "#EF4444"  # Vibrant Red
-        confidence = min(0.975, 0.90 + (pothole_pixels / 2000.0) * 0.07)
-        severity = "critical"
-        detected_box = extract_defect_box(pothole_mask)
     elif has_crack_hint or crack_pixels >= 50:
         predicted_class = "Damaged Road"
         color = "#EC4899"  # Pink / Magenta
