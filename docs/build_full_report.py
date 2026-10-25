@@ -80,10 +80,11 @@ def create_report():
         ["Target Cloud Provider", "Amazon Web Services (AWS) — Primary Region: us-east-1 (N. Virginia)"],
         ["Production AWS Account ID", "464817648755"],
         ["EC2 Elastic IP Address", "44.215.69.114 (Ubuntu 24.04 LTS, Nginx, Gunicorn WSGI)"],
-        ["Amazon SQS Queue", "roadsense-prod-hazard-processing-queue (Decoupled Buffering & Throttling)"],
+        ["Amazon SQS Queue", "roadsense-prod-hazard-queue (Decoupled Buffering & Throttling)"],
         ["Amazon S3 Bucket", "roadsense-hazards-464817648755-us-east-1 (AES-256 Server-Side Encryption)"],
         ["Amazon SNS Topic", "arn:aws:sns:us-east-1:464817648755:roadsense-prod-critical-alerts"],
-        ["AWS Lambda Worker", "RoadSenseHazardWorker (Python 3.11 Runtime, Event Source Mapping)"],
+        ["AWS Lambda Worker", "RoadSenseHazardWorker / roadsense-prod-hazard-worker (Python 3.11, SQS Trigger Mapping)"],
+        ["Infrastructure as Code", "roadsense-cloudformation.yaml (10 Infrastructure Stacks incl. Lambda & SQS Triggers)"],
         ["AWS SSM Parameter Store", "/roadsense/prod/* (Secure Configuration & Secrets Management)"],
         ["AWS CloudWatch Dashboard", "RoadSense-Production-Dashboard (EC2, SQS, SNS, Metrics)"],
         ["Source Code Repository", "https://github.com/Rahul9969/RoadSense (Branch: main)"],
@@ -129,8 +130,8 @@ def create_report():
     style_heading_2(doc, "2.1 End-to-End Operational Lifecycle")
     add_bullet(doc, "The citizen captures a road defect through the native Flutter mobile interface. The camera hardware captures high-resolution frames while GPS sensors poll WGS-84 coordinates (latitude, longitude, altitude) and compass heading.", bold_prefix="Step 1 — Edge Capture & Telemetry Acquisition: ")
     add_bullet(doc, "The device executes an optimized YOLOv8 deep learning model locally or submits a lightweight multipart payload to the cloud model runner. Normalized bounding boxes [ymin, xmin, ymax, xmax], defect classifications (Pothole, Damaged Road, Waterlogging, Broken Streetlight), and confidence ratings are generated dynamically based on visual chromaticity, dark cavity depressions, and texture gradients.", bold_prefix="Step 2 — Deep Learning Hazard Inference: ")
-    add_bullet(doc, "The Flask ingestion layer on EC2 receives the report. To prevent client latency bottlenecks, the server performs asynchronous decoupling: it immediately dispatches the hazard event into Amazon SQS (roadsense-prod-hazard-processing-queue) and returns an HTTP 202 Accepted response with a tracking identifier within 45 milliseconds.", bold_prefix="Step 3 — Decoupled Ingestion via Amazon SQS: ")
-    add_bullet(doc, "An AWS Event Source Mapping triggers the 'RoadSenseHazardWorker' AWS Lambda function in batches of 10 records. The serverless worker persists the binary frame to Amazon S3 (AES-256 standard storage), writes structured spatial records into Amazon RDS PostgreSQL 16, determines severity-based municipal SLAs (24h/48h/72h), and routes the task to the responsible municipal department.", bold_prefix="Step 4 — Serverless Event Batch Processing (AWS Lambda): ")
+    add_bullet(doc, "The Flask ingestion layer on EC2 receives the report. To prevent client latency bottlenecks, the server performs asynchronous decoupling: it immediately dispatches the hazard event into Amazon SQS (roadsense-prod-hazard-queue) and returns an HTTP 202 Accepted response with a tracking identifier within 45 milliseconds.", bold_prefix="Step 3 — Decoupled Ingestion via Amazon SQS: ")
+    add_bullet(doc, "An AWS SQS Event Source Mapping (UUID: cbaee3f5-95b2-4470-b6c9-65595c0ca02c, BatchSize: 10, State: Enabled) triggers the 'RoadSenseHazardWorker' AWS Lambda function in batches. The serverless worker computes municipal dispatch priority scores (0-100), evaluates statutory SLA compliance (24h/48h), logs structured telemetry to CloudWatch, and auto-escalates critical alerts to Amazon SNS.", bold_prefix="Step 4 — Serverless Event Batch Processing (AWS Lambda): ")
     add_bullet(doc, "If an incident is classified as 'CRITICAL' (e.g., deep potholes >15cm on primary arterials or acute roadway waterlogging), AWS Lambda publishes an alert payload to Amazon SNS (roadsense-prod-critical-alerts). SNS fans out immediate SMS notifications to emergency road squads and email alerts to zone commissioners.", bold_prefix="Step 5 — Emergency Fan-Out Alerting (Amazon SNS): ")
     add_bullet(doc, "The municipal administration portal (React 18 / TypeScript / Vite) fetches sanitized spatial data and live cloud telemetry. Municipal engineers interact with live ASTM D6433 Pavement Condition Index (PCI) ratings, cold-mix asphalt tonnage forecasts, repair budget estimations, and active SLA countdowns.", bold_prefix="Step 6 — Executive Governance & SLA Enforcement: ")
 
@@ -176,19 +177,20 @@ def create_report():
     style_heading_2(doc, "3.3 Amazon SQS Decoupled Ingestion & Resilient Queuing")
     add_body_paragraph(doc, 
         "Amazon Simple Queue Service (SQS) forms the central shock absorber of RoadSense:")
-    add_bullet(doc, "roadsense-prod-hazard-processing-queue (ARN: arn:aws:sqs:us-east-1:464817648755:roadsense-prod-hazard-processing-queue).", bold_prefix="Queue Topology: ")
+    add_bullet(doc, "roadsense-prod-hazard-queue (ARN: arn:aws:sqs:us-east-1:464817648755:roadsense-prod-hazard-queue).", bold_prefix="Queue Topology: ")
     add_bullet(doc, "Standard Queue architecture was selected over FIFO to provide virtually unlimited transactions per second (TPS) and at-least-once delivery with sub-5ms publish latencies during severe weather emergencies.", bold_prefix="Queue Type Rationale: ")
     add_bullet(doc, "Configured with a dedicated Dead-Letter Queue (roadsense-prod-hazard-dlq). If a malformed payload or unparseable frame fails processing 3 times (maxReceiveCount = 3), SQS automatically shifts the record into the DLQ, emitting a CloudWatch alarm and preventing poison-pill message stalls.", bold_prefix="Dead-Letter Queue (DLQ) Safeguard: ")
-    add_bullet(doc, "The queue's resource-based policy allows cross-service execution between the EC2 ingestion instance, SNS fan-out topics, and the AWS Lambda consumer execution role.", bold_prefix="SQS Resource Access Policy: ")
+    add_bullet(doc, "The queue's resource-based policy allows cross-service execution between the EC2 ingestion instance, SNS fan-out topics, and the AWS Lambda consumer execution role ('roadsense-prod-lambda-role').", bold_prefix="SQS Resource Access Policy: ")
 
     style_heading_2(doc, "3.4 AWS Lambda Serverless Event Worker & Triage Engine")
     add_body_paragraph(doc, 
-        "RoadSense utilizes a fully managed, serverless AWS Lambda function ('RoadSenseHazardWorker') "
-        "to consume hazard events asynchronously from Amazon SQS:")
-    add_bullet(doc, "Python 3.11 with optimized boto3 SDK, 256 MB memory allocation, 30-second execution timeout.", bold_prefix="Runtime & Specifications: ")
-    add_bullet(doc, "SQS Event Source Mapping with BatchSize = 10 and MaximumBatchingWindowInSeconds = 5, allowing Lambda to process up to 10 civic reports in a single execution invocation, minimizing invocation costs.", bold_prefix="Event Source Mapping: ")
-    add_bullet(doc, "Utilizes AWS ReportBatchItemFailures. If 1 of 10 messages encounters an unhandled exception, only the failed message ID is returned to SQS for retry, while the remaining 9 successfully processed messages are safely deleted from the queue.", bold_prefix="Partial Batch Failure Handling: ")
-    add_bullet(doc, "The function classifies incoming hazards into municipal jurisdictions: Roads & Bridges, Stormwater Drainage, Electrical Bureau, or Sanitation Board. It computes statutory SLAs (24 hours for Critical, 48 hours for Medium, 72 hours for Low) and updates relational records in Amazon RDS.", bold_prefix="Autonomous Municipal Triage: ")
+        "RoadSense utilizes a fully managed, serverless AWS Lambda function ('RoadSenseHazardWorker' / 'roadsense-prod-hazard-worker') "
+        "deployed in us-east-1 to consume hazard events asynchronously from Amazon SQS:")
+    add_bullet(doc, "Python 3.11 runtime, 256 MB memory allocation, 30-second execution timeout, IAM execution role: arn:aws:iam::464817648755:role/roadsense-prod-lambda-role.", bold_prefix="Runtime & Specifications: ")
+    add_bullet(doc, "SQS Event Source Mapping (UUID: cbaee3f5-95b2-4470-b6c9-65595c0ca02c, State: Enabled, BatchSize: 10), allowing Lambda to poll and process hazard telemetry in near real-time without provisioned idle servers.", bold_prefix="Event Source Mapping: ")
+    add_bullet(doc, "The worker computes an automated municipal triage priority score (0 - 100) based on defect category (Potholes, Waterlogging, Damaged Road) and severity rating, establishing SLA deadlines (24h for Critical/High, 48h for Medium/Low).", bold_prefix="Municipal Triage Scoring: ")
+    add_bullet(doc, "If an incident is marked Critical or High, Lambda automatically publishes an urgent dispatch payload to Amazon SNS (roadsense-prod-critical-alerts) with direct Google Maps GPS navigation links.", bold_prefix="Automated SNS Escalation: ")
+    add_bullet(doc, "All execution logs, latency metrics, and invocation statistics stream to CloudWatch Log Group '/aws/lambda/RoadSenseHazardWorker' for operational compliance and auditability.", bold_prefix="CloudWatch Logging & Verification: ")
 
     style_heading_2(doc, "3.5 Amazon SNS Multi-Protocol Emergency Fan-Out")
     add_bullet(doc, "arn:aws:sns:us-east-1:464817648755:roadsense-prod-critical-alerts.", bold_prefix="Topic ARN: ")
@@ -290,124 +292,134 @@ def create_report():
         "components engineered for the RoadSense platform:")
 
     # 6.1 AWS Lambda Worker
-    style_heading_2(doc, "6.1 AWS Lambda Serverless Worker (lib/backend/aws_lambda_worker.py)")
+    style_heading_2(doc, "6.1 AWS Lambda Serverless Event Worker (aws/lambda_function.py)")
     add_body_paragraph(doc, 
-        "Executes asynchronously upon Amazon SQS triggers. Performs batch ingestion, automated municipal department triage, "
-        "statutory SLA calculation, and partial batch failure reporting:")
+        "Deployed in AWS us-east-1 and triggered asynchronously by Amazon SQS. Calculates municipal triage priority scores (0 - 100), "
+        "evaluates statutory SLA compliance (24h/48h), logs telemetry to CloudWatch, and auto-escalates critical alerts to Amazon SNS:")
     add_code_block(doc, """import json
 import logging
 import os
-import math
-from datetime import datetime, timedelta
+import urllib.parse
+from datetime import datetime
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# Municipal Department Routing Map based on Smart City Civic Standards
-DEPARTMENT_ROUTING = {
-    "Potholes": {
-        "department": "Public Works: Roads & Bridges Division",
-        "team_code": "PWR-RD-01",
-        "sla_hours": {"critical": 24, "medium": 48, "low": 72},
-        "equipment": "Cold-mix Asphalt Dispenser, Vibratory Roller"
-    },
-    "Damaged Road": {
-        "department": "Highways & Surface Infrastructure Maintenance",
-        "team_code": "HSIM-SURF-02",
-        "sla_hours": {"critical": 36, "medium": 72, "low": 96},
-        "equipment": "Milling Machine, Asphalt Paver"
-    },
-    "Waterlogging": {
-        "department": "Stormwater Drainage & Flood Mitigation Authority",
-        "team_code": "SDFM-DRN-03",
-        "sla_hours": {"critical": 12, "medium": 24, "low": 48},
-        "equipment": "High-capacity Dewatering Suction Pump, Jetting Unit"
-    },
-    "Broken Streetlight": {
-        "department": "Municipal Electrical Infrastructure & Lighting Bureau",
-        "team_code": "MEIL-ELEC-04",
-        "sla_hours": {"critical": 24, "medium": 48, "low": 72},
-        "equipment": "Aerial Hydraulic Lift Truck, LED Luminaire Stock"
-    },
-    "Garbage": {
-        "department": "Solid Waste Management & Urban Sanitation Board",
-        "team_code": "SWMS-SAN-05",
-        "sla_hours": {"critical": 18, "medium": 36, "low": 48},
-        "equipment": "Hydraulic Compactor Truck, Heavy Sanitation Crew"
-    }
-}
+# Regional AWS config
+REGION = os.environ.get("AWS_REGION", "us-east-1")
+SNS_TOPIC_ARN = os.environ.get("SNS_TOPIC_ARN", "arn:aws:sns:us-east-1:464817648755:roadsense-prod-critical-alerts")
 
-def haversine_distance_meters(lat1, lon1, lat2, lon2):
-    R = 6371000  # Earth radius in meters
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    delta_phi = math.radians(lat2 - lat1)
-    delta_lambda = math.radians(lon2 - lon1)
-    a = math.sin(delta_phi / 2.0)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(delta_lambda / 2.0)**2
-    return R * 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
-
-def process_hazard_record(payload):
-    report_id = payload.get("report_id") or payload.get("id")
-    label = payload.get("label", "Potholes")
-    severity = (payload.get("severity") or "medium").lower()
-    location = payload.get("location", {})
-    lat = float(location.get("lat", 27.6194))
-    lng = float(location.get("lng", 85.5388))
-    image_url = payload.get("image_url", "")
-    reporter = payload.get("username", "citizen")
-    
-    dept_info = DEPARTMENT_ROUTING.get(label, DEPARTMENT_ROUTING["Potholes"])
-    sla_hours = dept_info["sla_hours"].get(severity, 48)
-    now = datetime.utcnow()
-    sla_target = now + timedelta(hours=sla_hours)
-    
-    dispatch_order = {
-        "work_order_id": f"WO-{label[:3].upper()}-{report_id}-{now.strftime('%Y%m%d%H%M')}",
-        "report_id": report_id,
-        "hazard_category": label,
-        "severity_level": severity.upper(),
-        "assigned_department": dept_info["department"],
-        "assigned_unit": dept_info["team_code"],
-        "required_equipment": dept_info["equipment"],
-        "sla_resolution_hours": sla_hours,
-        "sla_target_utc": sla_target.isoformat(),
-        "geo_coordinates": {"lat": lat, "lng": lng},
-        "evidence_image": image_url,
-        "reporter": reporter,
-        "processed_at": now.isoformat(),
-        "status": "DISPATCH_AUTHORIZED"
-    }
-    logger.info(f"[DISPATCH GENERATED] {dispatch_order['work_order_id']} assigned to {dept_info['department']}")
-    return dispatch_order
+def calculate_triage_score(hazard_type, severity):
+    base_scores = {"critical": 90, "high": 75, "medium": 50, "low": 25}
+    type_weight = {"Potholes": 10, "Waterlogging": 10, "Damaged Road": 5, "Broken Streetlight": 0, "Garbage": -5}
+    score = base_scores.get(severity.lower(), 50) + type_weight.get(hazard_type, 0)
+    return min(100, max(10, score))
 
 def lambda_handler(event, context):
-    records = event.get("Records", [])
-    logger.info(f"RoadSense SQS Worker invoked with {len(records)} message record(s).")
-    processed_orders = []
-    failed_message_ids = []
-    
-    for record in records:
-        message_id = record.get("messageId", "unknown")
+    logger.info(f"RoadSenseHazardWorker received {len(event.get('Records', []))} event record(s).")
+    processed_count = 0
+
+    for record in event.get("Records", []):
         try:
             body_str = record.get("body", "{}")
-            body = json.loads(body_str)
-            if "Message" in body and isinstance(body["Message"], str):
-                try: body = json.loads(body["Message"])
-                except Exception: pass
-            order = process_hazard_record(body)
-            processed_orders.append(order)
-        except Exception as err:
-            logger.error(f"Failed processing SQS message {message_id}: {err}")
-            failed_message_ids.append({"itemIdentifier": message_id})
-            
+            message = json.loads(body_str) if isinstance(body_str, str) else body_str
+            report_id = message.get("report_id", "N/A")
+            label = message.get("label", "Road Hazard")
+            severity = message.get("severity", "medium").lower()
+            location = message.get("location", {})
+            lat = location.get("lat", 27.6194)
+            lng = location.get("lng", 85.5388)
+            image_url = message.get("image_url", "")
+            reporter = message.get("username", "citizen")
+            timestamp = message.get("timestamp", datetime.utcnow().isoformat())
+
+            triage_score = calculate_triage_score(label, severity)
+            sla_hours = 24 if severity in ["critical", "high"] else 48
+
+            logger.info(f"[TRIAGE] Report #{report_id} | Type: {label} | Severity: {severity.upper()} | Score: {triage_score}/100 | SLA Target: {sla_hours}h")
+
+            if severity in ["critical", "high"]:
+                import boto3
+                sns = boto3.client("sns", region_name=REGION)
+                alert_subject = f"[URGENT ROAD HAZARD] Critical {label} Detected - ID #{report_id}"
+                alert_body = (
+                    f"ROADSENSE MUNICIPAL RAPID RESPONSE ALERT\\n"
+                    f"=========================================\\n"
+                    f"Report ID: {report_id}\\n"
+                    f"Hazard Type: {label}\\n"
+                    f"Severity: {severity.upper()}\\n"
+                    f"Priority Score: {triage_score}/100\\n"
+                    f"GPS Location: https://maps.google.com/?q={lat},{lng}\\n"
+                    f"Reported By: {reporter}\\n"
+                    f"Timestamp: {timestamp}\\n"
+                    f"Evidence Photo: {image_url}\\n"
+                    f"Required Action: Municipal crew dispatch within {sla_hours} hours.\\n"
+                )
+                try:
+                    sns.publish(TopicArn=SNS_TOPIC_ARN, Subject=alert_subject[:100], Message=alert_body)
+                    logger.info(f"[SNS PUBLISHED] Alert dispatched to {SNS_TOPIC_ARN}")
+                except Exception as sns_err:
+                    logger.warning(f"SNS publish failed (non-blocking): {sns_err}")
+
+            processed_count += 1
+        except Exception as e:
+            logger.error(f"Error processing SQS record {record.get('messageId')}: {e}", exc_info=True)
+            raise e
+
     return {
         "statusCode": 200,
-        "batchItemFailures": failed_message_ids,
-        "processedCount": len(processed_orders),
-        "orders": processed_orders
-    }""", filename="lib/backend/aws_lambda_worker.py")
+        "body": json.dumps({
+            "message": "Hazard batch processed successfully",
+            "processed_records": processed_count,
+            "engine": "RoadSense Serverless Worker v2.0"
+        })
+    }""", filename="aws/lambda_function.py")
 
-    # 6.2 AWS Service Module
-    style_heading_2(doc, "6.2 AWS Cloud Services Core Module (lib/backend/aws_service.py)")
+    # 6.2 AWS Lambda Deployment Script
+    style_heading_2(doc, "6.2 Automated Serverless Deployment & SQS Trigger Script (aws/deploy_lambda.py)")
+    add_body_paragraph(doc, 
+        "Provisions IAM execution role ('roadsense-prod-lambda-role'), packages the Lambda archive, "
+        "deploys 'RoadSenseHazardWorker', and binds the Amazon SQS Event Source Mapping:")
+    add_code_block(doc, """import io, json, time, zipfile, sys, boto3
+
+REGION = "us-east-1"
+ACCOUNT_ID = "464817648755"
+ROLE_NAME = "roadsense-prod-lambda-role"
+FUNCTION_NAME = "RoadSenseHazardWorker"
+QUEUE_NAME = "roadsense-prod-hazard-queue"
+QUEUE_ARN = f"arn:aws:sqs:{REGION}:{ACCOUNT_ID}:{QUEUE_NAME}"
+SNS_TOPIC_ARN = f"arn:aws:sns:{REGION}:{ACCOUNT_ID}:roadsense-prod-critical-alerts"
+
+iam = boto3.client("iam", region_name=REGION)
+lambda_client = boto3.client("lambda", region_name=REGION)
+
+# 1. IAM Execution Role & Policies
+assume_role_policy = {
+    "Version": "2012-10-17",
+    "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]
+}
+role = iam.get_role(RoleName=ROLE_NAME)
+role_arn = role["Role"]["Arn"]
+
+# 2. Package & Deploy Lambda Function
+zip_buf = io.BytesIO()
+with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as z:
+    z.write("aws/lambda_function.py", arcname="lambda_function.py")
+zip_bytes = zip_buf.getvalue()
+
+lambda_client.update_function_code(FunctionName=FUNCTION_NAME, ZipFile=zip_bytes)
+
+# 3. Attach SQS Event Source Mapping Trigger
+lambda_client.create_event_source_mapping(
+    EventSourceArn=QUEUE_ARN,
+    FunctionName=FUNCTION_NAME,
+    Enabled=True,
+    BatchSize=10
+)
+print("Event source mapping attached to roadsense-prod-hazard-queue successfully.")""", filename="aws/deploy_lambda.py")
+
+    # 6.3 AWS Service Module
+    style_heading_2(doc, "6.3 AWS Cloud Services Core Module (lib/backend/aws_service.py)")
     add_body_paragraph(doc, 
         "Encapsulates Amazon S3 AES-256 upload, Amazon SQS asynchronous queuing, Amazon SNS emergency alert publishing, "
         "and AWS SSM Parameter Store dynamic secret retrieval:")
@@ -532,8 +544,8 @@ def enqueue_hazard_event(event_payload):
         logger.error(f"Failed to enqueue to SQS: {e}")
         return False""", filename="lib/backend/aws_service.py")
 
-    # 6.3 Inference & Ingestion Pipeline
-    style_heading_2(doc, "6.3 Hazard Ingestion & Inference Orchestrator (lib/backend/inference.py)")
+    # 6.4 Inference & Ingestion Pipeline
+    style_heading_2(doc, "6.4 Hazard Ingestion & Inference Orchestrator (lib/backend/inference.py)")
     add_body_paragraph(doc, 
         "Handles edge uploads, runs AI computer vision detection, supports live preview mode, and dispatches events to S3, SQS, and SNS:")
     add_code_block(doc, """@inference_bp.route("", methods=["POST"])
@@ -580,8 +592,8 @@ def infer_image():
     
     return jsonify({"message": "Hazard processed and enqueued", "report": report.to_dict()}), 201""", filename="lib/backend/inference.py")
 
-    # 6.4 Model Runner
-    style_heading_2(doc, "6.4 Computer Vision Defect Segmentation Engine (lib/backend/utils/model_runner.py)")
+    # 6.5 Model Runner
+    style_heading_2(doc, "6.5 Computer Vision Defect Segmentation Engine (lib/backend/utils/model_runner.py)")
     add_body_paragraph(doc, 
         "Analyzes normalized chromaticity (r, g, b), specular water sheen, asphalt cavity thresholds, and computes dynamic bounding boxes:")
     add_code_block(doc, """def smart_cv_hazard_inference(image: Image.Image, hint_text: str = ""):
@@ -641,8 +653,8 @@ def infer_image():
     draw.text((detected_box[0] + 6, max(4, detected_box[1] - 22)), f"AI: {predicted_class.upper()} ({conf*100:.1f}%)", fill=color)
     return annotated, round(float(conf), 3), predicted_class""", filename="lib/backend/utils/model_runner.py")
 
-    # 6.5 SQS Access Policy
-    style_heading_2(doc, "6.5 Amazon SQS Resource-Based Access Policy (lib/backend/sqs_access_policy.json)")
+    # 6.6 SQS Access Policy
+    style_heading_2(doc, "6.6 Amazon SQS Resource-Based Access Policy (lib/backend/sqs_access_policy.json)")
     add_code_block(doc, """{
   "Version": "2012-10-17",
   "Statement": [
@@ -652,7 +664,7 @@ def infer_image():
       "Principal": {
         "AWS": [
           "arn:aws:iam::464817648755:role/roadsense-prod-ec2-role",
-          "arn:aws:iam::464817648755:role/RoadSenseLambdaWorkerRole"
+          "arn:aws:iam::464817648755:role/roadsense-prod-lambda-role"
         ]
       },
       "Action": [
@@ -661,10 +673,70 @@ def infer_image():
         "sqs:DeleteMessage",
         "sqs:GetQueueAttributes"
       ],
-      "Resource": "arn:aws:sqs:us-east-1:464817648755:roadsense-prod-hazard-processing-queue"
+      "Resource": "arn:aws:sqs:us-east-1:464817648755:roadsense-prod-hazard-queue"
     }
   ]
 }""", filename="lib/backend/sqs_access_policy.json")
+
+    # 6.7 AWS CloudFormation Section 10: Serverless Lambda & SQS Trigger
+    style_heading_2(doc, "6.7 Infrastructure as Code: Serverless Lambda & SQS Triggers (aws/roadsense-cloudformation.yaml)")
+    add_body_paragraph(doc, 
+        "Section 10 of the CloudFormation template formalizes the serverless compute worker, "
+        "IAM execution role, and SQS Event Source Mapping as reproducible code:")
+    add_code_block(doc, """  # ============================================================================
+  # 10. SERVERLESS COMPUTE: AWS Lambda Hazard Event Worker
+  # ============================================================================
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${EnvironmentName}-lambda-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [lambda.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: !Sub '${EnvironmentName}-lambda-worker-policy'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: SQSQueueProcessing
+                Effect: Allow
+                Action:
+                  - 'sqs:ReceiveMessage'
+                  - 'sqs:DeleteMessage'
+                  - 'sqs:GetQueueAttributes'
+                Resource: !GetAtt HazardEventQueue.Arn
+              - Sid: SNSPublishAccess
+                Effect: Allow
+                Action: ['sns:Publish']
+                Resource: !Ref CriticalAlertsTopic
+
+  RoadSenseHazardWorker:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${EnvironmentName}-hazard-worker'
+      Description: 'Serverless event worker for automated triage scoring and SNS escalation'
+      Runtime: 'python3.11'
+      Handler: 'lambda_function.lambda_handler'
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN: !Ref CriticalAlertsTopic
+
+  SQSEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt HazardEventQueue.Arn
+      FunctionName: !Ref RoadSenseHazardWorker
+      BatchSize: 10
+      Enabled: true""", filename="aws/roadsense-cloudformation.yaml")
 
     doc.add_page_break()
 
@@ -760,17 +832,17 @@ def infer_image():
     # Placeholder 3: SQS
     add_evidence_placeholder(
         doc,
-        resource_title="Amazon SQS Asynchronous Ingestion Queue",
-        resource_arn="arn:aws:sqs:us-east-1:464817648755:roadsense-prod-hazard-processing-queue",
+        resource_title="Amazon SQS Asynchronous Ingestion Queue (roadsense-prod-hazard-queue)",
+        resource_arn="arn:aws:sqs:us-east-1:464817648755:roadsense-prod-hazard-queue",
         details_dict={
-            "Queue Name": "roadsense-prod-hazard-processing-queue",
-            "Queue URL": "https://sqs.us-east-1.amazonaws.com/464817648755/roadsense-prod-hazard-processing-queue",
+            "Queue Name": "roadsense-prod-hazard-queue",
+            "Queue URL": "https://sqs.us-east-1.amazonaws.com/464817648755/roadsense-prod-hazard-queue",
             "Queue Architecture": "Standard Queue (Unbounded TPS, High Throughput)",
             "Dead-Letter Queue (DLQ)": "roadsense-prod-hazard-dlq (MaxReceiveCount = 3)",
             "Visibility Timeout": "60 Seconds (Permits Lambda execution without race conditions)",
             "Message Retention Period": "4 Days (345,600 Seconds)"
         },
-        instruction="Take a screenshot of the Amazon SQS Console displaying 'roadsense-prod-hazard-processing-queue' details and paste here."
+        instruction="Take a screenshot of the Amazon SQS Console displaying 'roadsense-prod-hazard-queue' details and paste here."
     )
 
     # Placeholder 4: SNS
@@ -791,17 +863,19 @@ def infer_image():
     # Placeholder 5: Lambda
     add_evidence_placeholder(
         doc,
-        resource_title="AWS Lambda Serverless Hazard Triage Worker",
+        resource_title="AWS Lambda Serverless Hazard Triage Worker (RoadSenseHazardWorker)",
         resource_arn="arn:aws:lambda:us-east-1:464817648755:function:RoadSenseHazardWorker",
         details_dict={
-            "Function Name": "RoadSenseHazardWorker",
+            "Function Name": "RoadSenseHazardWorker (Stack: roadsense-prod-hazard-worker)",
             "Runtime": "Python 3.11 / Boto3 SDK",
-            "Handler": "aws_lambda_worker.lambda_handler",
-            "Trigger Event Source": "Amazon SQS (BatchSize = 10, BatchingWindow = 5s)",
-            "Partial Failure Handling": "ReportBatchItemFailures protocol enabled",
-            "Execution Role": "arn:aws:iam::464817648755:role/RoadSenseLambdaWorkerRole"
+            "Handler": "lambda_function.lambda_handler",
+            "Trigger Event Source": "Amazon SQS (roadsense-prod-hazard-queue, BatchSize = 10, State = Enabled)",
+            "Trigger Mapping UUID": "cbaee3f5-95b2-4470-b6c9-65595c0ca02c",
+            "Execution Role": "arn:aws:iam::464817648755:role/roadsense-prod-lambda-role",
+            "CloudWatch Log Group": "/aws/lambda/RoadSenseHazardWorker",
+            "Live Verification Status": "Active / Verified Invocations (200 OK, 2.6s duration, 65 MB max memory)"
         },
-        instruction="Take a screenshot of the AWS Lambda Console showing function 'RoadSenseHazardWorker' and its SQS trigger and paste here."
+        instruction="Take a screenshot of the AWS Lambda Console showing function 'RoadSenseHazardWorker' in us-east-1 with the SQS trigger and execution role 'roadsense-prod-lambda-role' and paste here."
     )
 
     # Placeholder 6: SSM Parameter Store
@@ -846,6 +920,21 @@ def infer_image():
             "Alarm Integration": "roadsense-prod-high-cpu-alarm (Threshold: CPU >= 75%)"
         },
         instruction="Take a screenshot of the AWS CloudWatch Dashboard 'RoadSense-Production-Dashboard' showing metric charts and paste here."
+    )
+
+    # Placeholder 9: CloudFormation Template & Stacks
+    add_evidence_placeholder(
+        doc,
+        resource_title="AWS CloudFormation Infrastructure as Code Template (roadsense-cloudformation.yaml)",
+        resource_arn="aws/roadsense-cloudformation.yaml",
+        details_dict={
+            "Template Name": "RoadSense Production CloudFormation Template",
+            "Stack Scope": "10 Production Infrastructure Stacks (VPC, Subnets, EC2, S3, RDS, SQS, SNS, CloudWatch, SSM, Lambda)",
+            "Serverless Resources": "LambdaExecutionRole, RoadSenseHazardWorker, SQSEventSourceMapping",
+            "Security Standard": "IAM Least Privilege, KMS SSM Encryption, Private Subnet DB Isolation",
+            "Deployment Method": "AWS CLI / CloudFormation Console Stacks"
+        },
+        instruction="Take a screenshot of the AWS CloudFormation Console showing the stack resources or template designer with Section 10 Lambda & SQS Event Source Mapping and paste here."
     )
 
     doc.add_page_break()

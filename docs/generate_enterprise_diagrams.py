@@ -259,7 +259,7 @@ def build_cloud_architecture_diagram():
 
     # Card 3.1: Amazon SQS Ingestion Queue
     draw_service_card(draw, serv_x + 40, serv_y + 90, 620, 520, "📬",
-                      "Amazon SQS Queue", "roadsense-prod-hazard-processing-queue", [
+                      "Amazon SQS Queue", "roadsense-prod-hazard-queue", [
                           ("Queue Architecture: ", "Standard (Unbounded Concurrency)"),
                           ("Decoupling Metric: ", "45ms Instant HTTP 202 Response"),
                           ("Dead-Letter Queue: ", "roadsense-prod-hazard-dlq"),
@@ -273,12 +273,12 @@ def build_cloud_architecture_diagram():
     draw_service_card(draw, serv_x + 720, serv_y + 90, 640, 520, "⚙️",
                       "AWS Lambda Triage Worker", "RoadSenseHazardWorker", [
                           ("Runtime Environment: ", "Python 3.11 Serverless Container"),
-                          ("Trigger Mapping: ", "Amazon SQS BatchSource (Size=10)"),
-                          ("Batch Window: ", "5 Seconds Maximum Window"),
-                          ("Failure Protocol: ", "ReportBatchItemFailures"),
+                          ("Trigger Mapping: ", "Amazon SQS EventSource (BatchSize=10)"),
+                          ("Trigger UUID: ", "cbaee3f5-95b2-4470-b6c9-65595c0ca02c"),
                           ("Municipal Routing: ", "Roads, Drainage, Electrical Bureau"),
                           ("SLA Deadlines: ", "Critical 24h, Medium 48h, Low 72h"),
-                          ("Execution Role: ", "RoadSenseLambdaWorkerRole")
+                          ("Execution Role: ", "roadsense-prod-lambda-role"),
+                          ("CloudWatch Logs: ", "/aws/lambda/RoadSenseHazardWorker")
                       ], COLOR_LAMBDA)
 
     # Card 3.3: Amazon S3 Hazard Media Storage
