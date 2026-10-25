@@ -1,0 +1,49 @@
+{
+  "Version": "2012-10-17",
+  "Id": "RoadSenseProdHazardQueuePolicy",
+  "Statement": [
+    {
+      "Sid": "AllowEC2AndBackendSendMessages",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": [
+          "arn:aws:iam::464817648755:role/roadsense-prod-ec2-role",
+          "arn:aws:iam::464817648755:root"
+        ]
+      },
+      "Action": [
+        "sqs:SendMessage",
+        "sqs:GetQueueUrl",
+        "sqs:GetQueueAttributes"
+      ],
+      "Resource": "arn:aws:sqs:us-east-1:464817648755:roadsense-prod-hazard-queue"
+    },
+    {
+      "Sid": "AllowSNSTopicFanOut",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "sns.amazonaws.com"
+      },
+      "Action": "sqs:SendMessage",
+      "Resource": "arn:aws:sqs:us-east-1:464817648755:roadsense-prod-hazard-queue",
+      "Condition": {
+        "ArnEquals": {
+          "aws:SourceArn": "arn:aws:sns:us-east-1:464817648755:roadsense-prod-critical-alerts"
+        }
+      }
+    },
+    {
+      "Sid": "AllowLambdaServiceConsumeAndPoll",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "lambda.amazonaws.com"
+      },
+      "Action": [
+        "sqs:ReceiveMessage",
+        "sqs:DeleteMessage",
+        "sqs:GetQueueAttributes"
+      ],
+      "Resource": "arn:aws:sqs:us-east-1:464817648755:roadsense-prod-hazard-queue"
+    }
+  ]
+}

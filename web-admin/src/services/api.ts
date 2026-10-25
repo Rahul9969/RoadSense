@@ -133,3 +133,32 @@ export async function fetchStats(): Promise<AdminStats> {
 
   return response.json();
 }
+
+export async function fetchCloudTelemetry(): Promise<import('../type').CloudTelemetry> {
+  const base = getApiBaseUrl();
+  const response = await fetch(`${base}/api/admin/cloud-telemetry`, {
+    method: 'GET',
+    headers: getAuthHeaders(),
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch cloud telemetry');
+  }
+
+  return response.json();
+}
+
+export async function fetchTriageAnalytics(): Promise<import('../type').TriageAnalytics> {
+  const base = getApiBaseUrl();
+  const response = await fetch(`${base}/api/admin/triage-analytics`, {
+    method: 'GET',
+    headers: getAuthHeaders(),
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch triage analytics');
+  }
+
+  return response.json();
+}
+

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Toaster, toast } from 'sonner';
 import { Search, Filter, AlertTriangle } from 'lucide-react';
-import type { IssueReport, AdminStats, UserAuth } from './type';
-import { getStoredAuth, setStoredAuth, fetchAllReports, updateReportStatus, fetchStats } from './services/api';
+import type { IssueReport, AdminStats, UserAuth, CloudTelemetry, TriageAnalytics } from './type';
+import { getStoredAuth, setStoredAuth, fetchAllReports, updateReportStatus, fetchStats, fetchCloudTelemetry, fetchTriageAnalytics } from './services/api';
 import { Header } from './components/Header';
 import { StatsCards } from './components/StatsCards';
 import { MapSection } from './components/MapSection';
@@ -11,10 +11,14 @@ import { ImageModal } from './components/ImageModal';
 import { SkeletonLoader } from './components/SkeletonLoader';
 import { ApiConfigModal } from './components/ApiConfigModal';
 import { LoginView } from './components/LoginView';
+import { CloudTelemetryCard } from './components/CloudTelemetryCard';
+import { TriageAnalyticsCard } from './components/TriageAnalyticsCard';
 
 export function App() {
   const [user, setUser] = useState<UserAuth | null>(() => getStoredAuth());
   const [issues, setIssues] = useState<IssueReport[]>([]);
+  const [telemetry, setTelemetry] = useState<CloudTelemetry | null>(null);
+  const [triageAnalytics, setTriageAnalytics] = useState<TriageAnalytics | null>(null);
   const [stats, setStats] = useState<AdminStats>({
     total: 0,
     reported: 0,
@@ -33,16 +37,20 @@ export function App() {
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [isConfigOpen, setIsConfigOpen] = useState<boolean>(false);
 
-  // Load issues and statistics from backend
+  // Load issues, statistics, cloud telemetry, and triage analytics from backend
   const loadData = useCallback(async () => {
     try {
       setIsRefreshing(true);
-      const [fetchedIssues, fetchedStats] = await Promise.all([
+      const [fetchedIssues, fetchedStats, fetchedTelemetry, fetchedAnalytics] = await Promise.all([
         fetchAllReports(),
         fetchStats().catch(() => null),
+        fetchCloudTelemetry().catch(() => null),
+        fetchTriageAnalytics().catch(() => null),
       ]);
 
       setIssues(fetchedIssues);
+      if (fetchedTelemetry) setTelemetry(fetchedTelemetry);
+      if (fetchedAnalytics) setTriageAnalytics(fetchedAnalytics);
 
       if (fetchedStats) {
         setStats(fetchedStats);
@@ -157,6 +165,12 @@ export function App() {
           activeStatus={activeStatus}
           onSelectStatus={(s) => setActiveStatus(s)}
         />
+
+        {/* Live Cloud Infrastructure Telemetry */}
+        <CloudTelemetryCard telemetry={telemetry} isLoading={isLoading} />
+
+        {/* ASTM D6433 Pavement Condition & Municipal Triage Analytics */}
+        <TriageAnalyticsCard analytics={triageAnalytics} isLoading={isLoading} />
 
         {/* Map Section */}
         <MapSection
