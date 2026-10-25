@@ -442,9 +442,21 @@ Future<void> _submitReport() async {
         _isAnalyzing  = false;
       });
     } else {
-      final error = json.decode(response.body);
+      String errorMessage = "Server error (${response.statusCode})";
+      try {
+        final error = json.decode(response.body);
+        if (error is Map && error.containsKey('error')) {
+          errorMessage = error['error'].toString();
+        }
+      } catch (_) {
+        if (response.statusCode == 502) {
+          errorMessage = "Service temporarily unavailable (502 Bad Gateway). Please retry in a few seconds.";
+        } else if (response.statusCode == 504) {
+          errorMessage = "Server timed out processing high-resolution image (504).";
+        }
+      }
       _showSnackBar(
-        "Failed to submit: ${error['error']}", 
+        "Failed to submit: $errorMessage", 
         Colors.red
       );
       setState(() {
