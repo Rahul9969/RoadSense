@@ -347,13 +347,14 @@ void _showFullImage(String imageStr) {
               Navigator.pushReplacementNamed(context, '/login');
             }
           });
-      } else {
-        setState(() {
-          _isAnalyzing = false;
-          _prediction = "Potholes";
-          _confidenceScore = 0.88;
-        });
-        _showSnackBar("Image attached and ready. Tap Submit to log report.", const Color(0xFF2563EB));
+        } else {
+          setState(() {
+            _isAnalyzing = false;
+            _prediction = "Potholes";
+            _confidenceScore = 0.88;
+          });
+          _showSnackBar("Image attached and ready. Tap Submit to log report.", const Color(0xFF2563EB));
+        }
       }
     }
   }
