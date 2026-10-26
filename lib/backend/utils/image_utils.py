@@ -7,8 +7,10 @@ def base64_to_image(base64_str):
     image_bytes = base64.b64decode(base64_str)
     return Image.open(io.BytesIO(image_bytes))
 
-def image_to_base64(image, format="PNG"):
-    """Convert PIL Image to base64 string"""
+def image_to_base64(image, format="JPEG", quality=80):
+    """Convert PIL Image to compressed base64 string (JPEG default for minimal memory & network overhead)"""
     buffer = io.BytesIO()
-    image.save(buffer, format=format)
+    if image.mode in ("RGBA", "P"):
+        image = image.convert("RGB")
+    image.save(buffer, format=format, quality=quality)
     return base64.b64encode(buffer.getvalue()).decode("utf-8")

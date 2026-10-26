@@ -85,6 +85,15 @@ def infer_image():
 
         # 1. Convert base64 -> PIL Image
         pil_image = base64_to_image(image_base64)
+        if pil_image.mode in ("RGBA", "P"):
+            pil_image = pil_image.convert("RGB")
+
+        # Downscale oversized mobile camera uploads to prevent high memory usage
+        max_dim = 1024
+        if max(pil_image.size) > max_dim:
+            scale = max_dim / float(max(pil_image.size))
+            new_size = (int(pil_image.size[0] * scale), int(pil_image.size[1] * scale))
+            pil_image = pil_image.resize(new_size, 1) # Image.Resampling.BILINEAR
 
         # 2. Run AI Inference / Segmentation
         hint = f"{description}".strip()
