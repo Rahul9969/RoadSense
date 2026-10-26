@@ -79,6 +79,10 @@ def create_report():
     meta_data = [
         ["Target Cloud Provider", "Amazon Web Services (AWS) — Primary Region: us-east-1 (N. Virginia)"],
         ["Production AWS Account ID", "464817648755"],
+        ["Amazon Virtual Private Cloud (VPC)", "roadsense-prod-vpc (vpc-07f6005772fe7740a, CIDR: 10.0.0.0/16)"],
+        ["VPC Subnet Topology", "4 Subnets (Public: 10.0.1.0/24 & 10.0.2.0/24; Private: 10.0.10.0/24 & 10.0.11.0/24)"],
+        ["VPC Internet Gateway & Routing", "roadsense-prod-igw (igw-062944e539e92cbab), Public RT (0.0.0.0/0 -> IGW), Private RT (Local)"],
+        ["Network Security Groups", "roadsense-prod-ec2-sg (80, 6969, 22), roadsense-prod-rds-sg (5432 restricted to EC2 SG)"],
         ["EC2 Elastic IP Address", "44.215.69.114 (Ubuntu 24.04 LTS, Nginx, Gunicorn WSGI)"],
         ["Amazon SQS Queue", "roadsense-prod-hazard-queue (Decoupled Buffering & Throttling)"],
         ["Amazon S3 Bucket", "roadsense-hazards-464817648755-us-east-1 (AES-256 Server-Side Encryption)"],
@@ -156,15 +160,24 @@ def create_report():
         "Figure 3.1: RoadSense Cloud Infrastructure Topology across AWS us-east-1.",
         width_in=6.5)
 
-    style_heading_2(doc, "3.1 Amazon EC2 Compute & Ingestion Layer")
+    style_heading_2(doc, "3.1 Amazon VPC Custom Networking, Subnet Topology & Security Groups")
+    add_body_paragraph(doc, 
+        "RoadSense rejects default public cloud networking in favor of a customized, isolated Amazon Virtual Private Cloud (VPC) "
+        "provisioned via CloudFormation in AWS us-east-1:")
+    add_bullet(doc, "VPC Name: roadsense-prod-vpc (ID: vpc-07f6005772fe7740a), IPv4 CIDR Block: 10.0.0.0/16. Configured with EnableDnsSupport=true and EnableDnsHostnames=true to guarantee seamless internal microservice name resolution.", bold_prefix="VPC Architecture & CIDR: ")
+    add_bullet(doc, "The network is partitioned into four distinct subnets across two Availability Zones (us-east-1a and us-east-1b) for fault tolerance: Two Public Subnets (roadsense-prod-public-1 [10.0.1.0/24] and roadsense-prod-public-2 [10.0.2.0/24]) with auto-assign public IPv4 for compute ingress; and Two Private Subnets (roadsense-prod-private-1 [10.0.10.0/24] and roadsense-prod-private-2 [10.0.11.0/24]) for complete database isolation.", bold_prefix="Multi-AZ Subnet Partitioning: ")
+    add_bullet(doc, "An Internet Gateway (roadsense-prod-igw [igw-062944e539e92cbab]) is attached to the VPC. The Public Route Table (roadsense-prod-public-rt) routes 0.0.0.0/0 traffic to the IGW. The Private Route Table (roadsense-prod-private-rt) maintains local-only (10.0.0.0/16) routing with zero direct internet access, guaranteeing that the database tier remains completely air-gapped from external threats.", bold_prefix="Internet Gateway & Route Segregation: ")
+    add_bullet(doc, "roadsense-prod-ec2-sg (sg-0ef26a47fbf2ec5d4) allows inbound TCP 80 (Nginx), TCP 6969 (Flask REST API), and TCP 22 (SSH with keypair). roadsense-prod-rds-sg (sg-0d8064e195ad8cb83) permits inbound PostgreSQL TCP 5432 strictly from the EC2 security group ID—blocking all public and unauthorized traffic.", bold_prefix="Tiered Security Groups: ")
+
+    style_heading_2(doc, "3.2 Amazon EC2 Compute & Ingestion Layer")
     add_body_paragraph(doc, 
         "The ingress tier is hosted on an Amazon Elastic Compute Cloud (EC2) virtual machine deployed in us-east-1:")
-    add_bullet(doc, "Ubuntu 24.04 LTS (x86_64), Elastic IP 44.215.69.114.", bold_prefix="Instance Environment: ")
+    add_bullet(doc, "Ubuntu 24.04 LTS (x86_64), Elastic IP 44.215.69.114, hosted in public subnet roadsense-prod-public-1 (10.0.1.195).", bold_prefix="Instance Environment: ")
     add_bullet(doc, "Configured with non-blocking reverse proxy routing, HTTP/2 multiplexing, client request buffering, Gzip payload compression, and TLS termination.", bold_prefix="Nginx Reverse Proxy: ")
     add_bullet(doc, "High-performance WSGI server configured with 4 asynchronous worker processes running under a systemd daemon (roadsense.service) ensuring automatic recovery on reboot or process termination.", bold_prefix="Gunicorn Application Daemon: ")
     add_bullet(doc, "The EC2 instance is attached to an AWS Identity and Access Management (IAM) instance profile ('roadsense-prod-ec2-role'). The application uses AWS Security Token Service (STS) temporary credentials, completely eliminating hardcoded secret keys from source code.", bold_prefix="Zero-Key IAM Role Security: ")
 
-    style_heading_2(doc, "3.2 Amazon S3 Scalable Asset Store & CDN Invalidation")
+    style_heading_2(doc, "3.3 Amazon S3 Scalable Asset Store & CDN Invalidation")
     add_body_paragraph(doc, 
         "To resolve the massive payload bloat that crippled legacy civic systems (where 66 MB base64 image strings "
         "were stored directly in database columns and transmitted over REST endpoints), RoadSense re-architected all binary data "
@@ -174,7 +187,7 @@ def create_report():
     add_bullet(doc, "Moving high-resolution binary images out of database payloads into S3 reduced backend JSON API responses from 66.17 MB to 4.4 KB—a 99.99% payload reduction that cut mobile and web query latency from 25.12 seconds down to 1.03 seconds.", bold_prefix="Payload Optimization Breakthrough: ")
     add_bullet(doc, "Images transition to S3 Standard-Infrequent Access (IA) after 90 days, and archive to S3 Glacier Flexible Retrieval after 365 days, yielding a 78% storage cost reduction over a 5-year civic retention lifecycle.", bold_prefix="Automated Lifecycle Rules: ")
 
-    style_heading_2(doc, "3.3 Amazon SQS Decoupled Ingestion & Resilient Queuing")
+    style_heading_2(doc, "3.4 Amazon SQS Decoupled Ingestion & Resilient Queuing")
     add_body_paragraph(doc, 
         "Amazon Simple Queue Service (SQS) forms the central shock absorber of RoadSense:")
     add_bullet(doc, "roadsense-prod-hazard-queue (ARN: arn:aws:sqs:us-east-1:464817648755:roadsense-prod-hazard-queue).", bold_prefix="Queue Topology: ")
@@ -182,7 +195,7 @@ def create_report():
     add_bullet(doc, "Configured with a dedicated Dead-Letter Queue (roadsense-prod-hazard-dlq). If a malformed payload or unparseable frame fails processing 3 times (maxReceiveCount = 3), SQS automatically shifts the record into the DLQ, emitting a CloudWatch alarm and preventing poison-pill message stalls.", bold_prefix="Dead-Letter Queue (DLQ) Safeguard: ")
     add_bullet(doc, "The queue's resource-based policy allows cross-service execution between the EC2 ingestion instance, SNS fan-out topics, and the AWS Lambda consumer execution role ('roadsense-prod-lambda-role').", bold_prefix="SQS Resource Access Policy: ")
 
-    style_heading_2(doc, "3.4 AWS Lambda Serverless Event Worker & Triage Engine")
+    style_heading_2(doc, "3.5 AWS Lambda Serverless Event Worker & Triage Engine")
     add_body_paragraph(doc, 
         "RoadSense utilizes a fully managed, serverless AWS Lambda function ('RoadSenseHazardWorker' / 'roadsense-prod-hazard-worker') "
         "deployed in us-east-1 to consume hazard events asynchronously from Amazon SQS:")
@@ -192,14 +205,14 @@ def create_report():
     add_bullet(doc, "If an incident is marked Critical or High, Lambda automatically publishes an urgent dispatch payload to Amazon SNS (roadsense-prod-critical-alerts) with direct Google Maps GPS navigation links.", bold_prefix="Automated SNS Escalation: ")
     add_bullet(doc, "All execution logs, latency metrics, and invocation statistics stream to CloudWatch Log Group '/aws/lambda/RoadSenseHazardWorker' for operational compliance and auditability.", bold_prefix="CloudWatch Logging & Verification: ")
 
-    style_heading_2(doc, "3.5 Amazon SNS Multi-Protocol Emergency Fan-Out")
+    style_heading_2(doc, "3.6 Amazon SNS Multi-Protocol Emergency Fan-Out")
     add_bullet(doc, "arn:aws:sns:us-east-1:464817648755:roadsense-prod-critical-alerts.", bold_prefix="Topic ARN: ")
     add_bullet(doc, "When a hazard with severity 'CRITICAL' is triaged, AWS Lambda publishes a structured event. SNS fans out alerts via SMS to municipal emergency squad leaders, sends email alerts with direct map coordinates to zone commissioners, and triggers webhook integrations to emergency dispatch consoles.", bold_prefix="Fan-Out Protocol: ")
 
-    style_heading_2(doc, "3.6 Amazon RDS PostgreSQL Spatial Database")
-    add_bullet(doc, "Managed PostgreSQL 16 engine configured with PostGIS spatial extensions. Handles transactional ACID operations, spatial geospatial indexing (ST_DWithin), and automated daily snapshots with point-in-time recovery.", bold_prefix="Relational Persistence: ")
+    style_heading_2(doc, "3.7 Amazon RDS PostgreSQL Spatial Database")
+    add_bullet(doc, "Managed PostgreSQL 18.3 engine (db.t3.micro) provisioned in private subnets (roadsense-prod-private-1 and roadsense-prod-private-2) within DB Subnet Group 'roadsense-cloud-production-dbsubnetgroup-7rnhfbsodqef'. PubliclyAccessible=false, accepting TCP 5432 strictly from the EC2 security group.", bold_prefix="Relational Persistence: ")
 
-    style_heading_2(doc, "3.7 AWS Systems Manager (SSM) Parameter Store & Zero-Hardcoding Security")
+    style_heading_2(doc, "3.8 AWS Systems Manager (SSM) Parameter Store & Zero-Hardcoding Security")
     add_bullet(doc, "Path: /roadsense/prod/*. All application secrets (database credentials, API keys, JWT secret keys, S3 bucket names, SQS URLs) are centralized in AWS SSM Parameter Store with SecureString KMS encryption.", bold_prefix="Secrets Governance: ")
 
     # ==========================================
@@ -213,6 +226,12 @@ def create_report():
 
     just_headers = ["AWS Cloud Service", "Alternative Design Pattern", "Limitations of Alternative", "Engineered Justification in RoadSense"]
     just_data = [
+        [
+            "Amazon VPC & Multi-AZ Network Isolation",
+            "Default AWS VPC / Single Flat Network",
+            "Default VPCs place all resources in public subnets with direct internet-routable IPs, exposing relational databases and microservices to public port scanning and brute-force vulnerabilities.",
+            "Enforces defense-in-depth isolation: places PostgreSQL RDS in air-gapped private subnets (no public IPs), routes compute ingress via custom IGW, and eliminates expensive NAT Gateways ($32.40/mo) for 100% Free Tier compliance."
+        ],
         [
             "Amazon SQS (Decoupled Queue)",
             "Synchronous HTTP REST API Processing",
@@ -827,7 +846,23 @@ def infer_image():
         "The following evidence containers document the provisioned cloud resources in AWS Account 464817648755 (us-east-1). "
         "Each block outlines the resource specification, target ARN, and an designated evidence container for inserting console screenshots:")
 
-    # Placeholder 1: EC2
+    # Placeholder 1: VPC Networking
+    add_evidence_placeholder(
+        doc,
+        resource_title="Amazon Virtual Private Cloud (VPC) & Multi-AZ Subnet Topology",
+        resource_arn="arn:aws:ec2:us-east-1:464817648755:vpc/vpc-07f6005772fe7740a",
+        details_dict={
+            "VPC Identifier": "roadsense-prod-vpc (vpc-07f6005772fe7740a)",
+            "IPv4 CIDR Block": "10.0.0.0/16 (EnableDnsSupport=true, EnableDnsHostnames=true)",
+            "Subnet Allocation": "4 Subnets (Public: 10.0.1.0/24 & 10.0.2.0/24; Private: 10.0.10.0/24 & 10.0.11.0/24)",
+            "Internet Gateway": "roadsense-prod-igw (igw-062944e539e92cbab attached to VPC)",
+            "Route Tables": "Public RT (0.0.0.0/0 -> IGW), Private RT (10.0.0.0/16 Local Only)",
+            "Security Groups": "EC2 SG (80, 6969, 22), RDS SG (5432 restricted to EC2 SG)"
+        },
+        instruction="Take a screenshot of the Amazon VPC Management Console showing 'roadsense-prod-vpc', Resource Map showing Subnets, Route Tables, and IGW and paste here."
+    )
+
+    # Placeholder 2: EC2
     add_evidence_placeholder(
         doc,
         resource_title="Amazon EC2 Compute Instance (API Ingress & Admin Portal)",
@@ -980,11 +1015,12 @@ def infer_image():
     style_heading_2(doc, "8.1 Multi-Tier Operational Cost Breakdown")
     cost_headers = ["AWS Cloud Resource", "Tier 1: Dev / Free Tier", "Tier 2: Medium Municipality (10,000 reports/mo)", "Tier 3: Metro Megacity (100,000 reports/mo)"]
     cost_data = [
+        ["Amazon VPC (Subnets, IGW, SGs)", "$0.00 (Native components free)", "$0.00 (Zero NAT Gateways used)", "$0.00 (Free Tier routing)"],
         ["Amazon EC2 (Ingress & Web)", "$0.00 (t2.micro Free Tier)", "$14.72 (t3.small Reserved)", "$58.88 (2x t3.medium ASG)"],
         ["Amazon SQS (Decoupled Buffer)", "$0.00 (1M free requests/mo)", "$0.04 (10k requests)", "$0.40 (100k requests)"],
         ["AWS Lambda (Serverless Triage)", "$0.00 (1M free calls/mo)", "$0.02 (1,000 batch invocations)", "$0.20 (10,000 batch invocations)"],
         ["Amazon S3 (Asset Store)", "$0.00 (5 GB free tier)", "$0.46 (20 GB Standard storage)", "$4.60 (200 GB Standard + IA)"],
-        ["Amazon RDS PostgreSQL 16", "$0.00 (db.t3.micro Free Tier)", "$17.52 (db.t3.micro Multi-AZ)", "$68.40 (db.t4g.small Multi-AZ)"],
+        ["Amazon RDS PostgreSQL 18", "$0.00 (db.t3.micro Free Tier)", "$17.52 (db.t3.micro Multi-AZ)", "$68.40 (db.t4g.small Multi-AZ)"],
         ["Amazon SNS (SMS & Push)", "$0.00 (100 free SMS)", "$6.50 (Critical alert SMS traffic)", "$42.00 (Megacity emergency SMS)"],
         ["CloudWatch & Data Transfer", "$0.00 (Basic metrics free)", "$3.20 (Custom alarms + logs)", "$12.50 (Detailed monitoring)"],
         ["TOTAL ESTIMATED COST (USD)", "$0.00 / month", "$42.46 / month", "$186.98 / month"],
